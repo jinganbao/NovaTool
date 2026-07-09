@@ -8,7 +8,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
 import { highlightActiveLine, highlightActiveLineGutter, lineNumbers } from "@codemirror/view";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
-import { Codemirror } from "vue-codemirror-next";
+import { Codemirror } from "vue-codemirror";
 import { useConfig } from "@/composables/useConfig";
 
 type CodeLanguage = "json" | "xml" | "plain";
