@@ -1,0 +1,19 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app, #111418);
+  color: var(--text-primary, #e7ecf3);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#app {
+  height: 100vh;
+}
+
+.n-input .n-input__input-el,
+.n-input .n-input__textarea-el {
+  font-family: inherit;
+}
