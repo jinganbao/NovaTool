@@ -1,17 +1,13 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { NButton, NInput, NSelect, NSpace, useMessage } from "naive-ui";
 import { Copy, RefreshCw } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 工具函数 ---- */
 const message = useMessage();
 const { copyText } = useClipboard(message);
-
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
 
 function pad(n: number, width = 2) {
   return String(n).padStart(width, "0");
@@ -78,6 +74,10 @@ const timer = setInterval(() => {
 }, 1000);
 
 onBeforeUnmount(() => clearInterval(timer));
+
+const localDisplay = computed(() => formatLocal(now.value));
+const utcDisplay = computed(() => formatUTC(now.value));
+const isoDisplay = computed(() => formatISO(now.value));
 
 /* ---- 时间戳 → 日期 ---- */
 const tsInput = ref("");
@@ -160,8 +160,8 @@ function useNowForDate() {
       <div class="output-grid">
         <div class="output-row">
           <span class="output-label">本地时间</span>
-          <code class="output-value">{{ formatLocal(now) }}</code>
-          <n-button size="tiny" quaternary :render-icon="() => renderIcon(Copy)" @click="copyText(formatLocal(now))" />
+          <code class="output-value">{{ localDisplay }}</code>
+          <n-button size="tiny" quaternary :render-icon="() => renderIcon(Copy)" @click="copyText(localDisplay)" />
         </div>
         <div class="output-row">
           <span class="output-label">秒级时间戳</span>
@@ -175,13 +175,13 @@ function useNowForDate() {
         </div>
         <div class="output-row">
           <span class="output-label">UTC</span>
-          <code class="output-value">{{ formatUTC(now) }}</code>
-          <n-button size="tiny" quaternary :render-icon="() => renderIcon(Copy)" @click="copyText(formatUTC(now))" />
+          <code class="output-value">{{ utcDisplay }}</code>
+          <n-button size="tiny" quaternary :render-icon="() => renderIcon(Copy)" @click="copyText(utcDisplay)" />
         </div>
         <div class="output-row">
           <span class="output-label">ISO 8601</span>
-          <code class="output-value">{{ formatISO(now) }}</code>
-          <n-button size="tiny" quaternary :render-icon="() => renderIcon(Copy)" @click="copyText(formatISO(now))" />
+          <code class="output-value">{{ isoDisplay }}</code>
+          <n-button size="tiny" quaternary :render-icon="() => renderIcon(Copy)" @click="copyText(isoDisplay)" />
         </div>
       </div>
     </div>
@@ -286,7 +286,7 @@ function useNowForDate() {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--bg-panel);
-  padding: 14px;
+  padding: 12px;
 }
 
 .card-head {

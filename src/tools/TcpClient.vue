@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, h, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { NButton, NInput, NSelect, NSpace, useMessage } from "naive-ui";
 import {
   BookmarkPlus,
@@ -15,7 +16,8 @@ import {
   Unlink,
   Wand2,
 } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
+import { loadJson, saveJson, makeId } from "@/utils/storage";
 import CodeEditor from "@/components/editor/CodeEditor.vue";
 import { useClipboard } from "@/composables/useClipboard";
 
@@ -96,6 +98,40 @@ const receiveMode = ref<"text" | "hex">("text");
 const receiveLog = ref("");
 const receiveRef = ref<HTMLElement | null>(null);
 
+/* ---- 后台事件监听：长连接接收数据 ---- */
+let unlistenClient: UnlistenFn | null = null;
+
+listen<{
+  type: "data" | "disconnect";
+  connId: string;
+  text?: string;
+  hex?: string;
+  bytes?: number;
+  message?: string;
+}>("tcp-client-event", (event) => {
+  const payload = event.payload;
+  if (payload.connId !== connId.value) return;
+
+  if (payload.type === "data") {
+    const body = receiveMode.value === "hex" ? (payload.hex ?? "") : (payload.text ?? "");
+    appendLog("recv", `${payload.bytes ?? 0} bytes${body ? `\n${body}` : " (empty)"}`);
+  } else if (payload.type === "disconnect") {
+    appendLog("error", payload.message ?? "连接已断开");
+    connId.value = null;
+  }
+}).then((fn) => {
+  unlistenClient = fn;
+});
+
+/* ---- 组件卸载：断开长连接 + 移除监听 ---- */
+onBeforeUnmount(() => {
+  if (connId.value) {
+    void invoke("tcp_disconnect", { connId: connId.value }).catch(() => {});
+    connId.value = null;
+  }
+  unlistenClient?.();
+});
+
 /* ---- 计算选项 ---- */
 const connectionOptions = computed(() =>
   savedConnections.value.map((item) => ({
@@ -115,27 +151,6 @@ watch(savedConnections, (value) => saveJson(CONNECTIONS_KEY, value), { deep: tru
 watch(savedPayloads, (value) => saveJson(PAYLOADS_KEY, value), { deep: true });
 
 /* ---- 工具函数 ---- */
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
-
-function makeId() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function loadJson<T>(key: string, fallback: T): T {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? (JSON.parse(stored) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveJson(key: string, value: unknown) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
 function parseTemplateValue(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
@@ -156,7 +171,16 @@ function now() {
 function appendLog(type: "send" | "recv" | "error" | "info", content: string) {
   const label =
     type === "send" ? "SEND" : type === "recv" ? "RECV" : type === "error" ? "ERR " : "INFO";
-  receiveLog.value += `${receiveLog.value ? "\n" : ""}[${now()}] ${label} ${content}`;
+  const newLine = `[${now()}] ${label} ${content}`;
+  let log = receiveLog.value;
+  // 限制日志总长度，防止长时间运行内存持续增长（最多保留 512KB）
+  const MAX_LOG_SIZE = 512 * 1024;
+  log += `${log ? "\n" : ""}${newLine}`;
+  if (log.length > MAX_LOG_SIZE) {
+    const cutPoint = log.indexOf("\n", log.length - MAX_LOG_SIZE);
+    log = log.slice(cutPoint > 0 ? cutPoint + 1 : 0);
+  }
+  receiveLog.value = log;
   void nextTick(() => {
     if (receiveRef.value) {
       receiveRef.value.scrollTop = receiveRef.value.scrollHeight;
@@ -314,8 +338,9 @@ async function sendPayload() {
         ? { connId: connId.value, payload: payload.value, mode: mode.value, timeoutMs: Number(timeoutMs.value) || 3000 }
         : { host: cleanHost, port: cleanPort, payload: payload.value, mode: mode.value, timeoutMs: Number(timeoutMs.value) || 3000 },
     );
-    const received = receiveMode.value === "hex" ? result.receivedHex : result.receivedText;
-    if (!usePersistent || result.bytesReceived > 0) {
+    // 长连接模式：数据通过后台事件推送，此处仅处理短连接响应
+    if (!usePersistent) {
+      const received = receiveMode.value === "hex" ? result.receivedHex : result.receivedText;
       appendLog(
         "recv",
         `${result.bytesReceived} bytes${received ? `\n${received}` : " (empty)"}`,

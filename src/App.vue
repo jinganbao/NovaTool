@@ -3,19 +3,19 @@ import { computed, watch } from "vue";
 import { NConfigProvider, NMessageProvider } from "naive-ui";
 import AppWorkspace from "@/components/layout/AppWorkspace.vue";
 import { getNaiveTheme, getThemeOverrides, getThemeVars } from "@/config/theme";
-import { useConfig } from "@/composables/useConfig";
+import { useConfig, resolvedThemeMode } from "@/composables/useConfig";
 import "@/assets/theme.css";
 
 const config = useConfig();
-const naiveTheme = computed(() => getNaiveTheme(config.themeMode));
-const themeOverrides = computed(() => getThemeOverrides(config));
-const themeVars = computed(() => getThemeVars(config));
+const naiveTheme = computed(() => getNaiveTheme(resolvedThemeMode.value));
+const themeOverrides = computed(() => getThemeOverrides(config, resolvedThemeMode.value));
+const themeVars = computed(() => getThemeVars(config, resolvedThemeMode.value));
 
 watch(themeVars, (vars) => {
   for (const [key, value] of Object.entries(vars)) {
     document.documentElement.style.setProperty(key, value);
   }
-  document.documentElement.dataset.theme = config.themeMode;
+  document.documentElement.dataset.theme = resolvedThemeMode.value;
 }, { immediate: true });
 </script>
 

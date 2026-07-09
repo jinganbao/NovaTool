@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { NButton, NCheckbox, NInput, NSpace, NTag, useMessage } from "naive-ui";
 import { Copy, Eraser, Regex } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import CodeEditor, { type LineDecoration } from "@/components/editor/CodeEditor.vue";
 import { useClipboard } from "@/composables/useClipboard";
 
@@ -128,10 +128,6 @@ function doReplace() {
 }
 
 /* ---- 工具 ---- */
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
-
 function clearAll() {
   pattern.value = "";
   testText.value = "";
@@ -288,7 +284,7 @@ function copyMatches() {
 
 .pane-head h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -467,7 +463,7 @@ function copyMatches() {
 
 /* ---- 匹配高亮 ---- */
 :deep(.regex-match) {
-  background: rgba(74, 222, 128, 0.15) !important;
+  background: var(--success-soft, rgba(74, 222, 128, 0.15)) !important;
   border-left: 3px solid var(--success) !important;
 }
 

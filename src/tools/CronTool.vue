@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h, ref } from "vue";
+import { computed, ref } from "vue";
 import { NButton, NInput, NSpace, NTag, useMessage } from "naive-ui";
 import { Clock, Copy, RefreshCw } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import { parseCron, nextRuns, describeCron, FIELD_DOCS, PRESETS } from "@/utils/cron";
 import { useClipboard } from "@/composables/useClipboard";
 
@@ -28,10 +28,6 @@ const nextDates = computed(() => {
 });
 
 /* ---- 工具 ---- */
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
-
 function applyPreset(value: string) {
   expression.value = value;
 }
@@ -210,8 +206,7 @@ function copyAll() {
   margin-top: 10px;
   padding: 8px 10px;
   border-radius: 5px;
-  background: var(--success);
-  background: rgba(74, 222, 128, 0.1);
+  background: var(--success-soft, rgba(74, 222, 128, 0.1));
   color: var(--success);
   font-size: 13px;
 }

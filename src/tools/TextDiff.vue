@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { h, ref } from "vue";
+import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { NButton, NSpace, useMessage } from "naive-ui";
 import { ArrowLeftRight, Copy, Eraser, GitCompare, Pencil } from "lucide-vue-next";
-import type { Component } from "vue";
-import CodeEditor, { type LineDecoration } from "@/components/editor/CodeEditor.vue";
+import { renderIcon } from "@/utils/render";
+import CodeEditor, { type LineDecoration, type InlineMark } from "@/components/editor/CodeEditor.vue";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 模式 ---- */
@@ -26,7 +26,56 @@ interface DiffResult {
 
 const leftMarks = ref<LineDecoration[]>([]);
 const rightMarks = ref<LineDecoration[]>([]);
+const leftInlineMarks = ref<InlineMark[]>([]);
+const rightInlineMarks = ref<InlineMark[]>([]);
 const stats = ref({ added: 0, removed: 0 });
+
+/* ---- 字符级 diff（LCS 算法）---- */
+function computeCharDiff(a: string, b: string): { aParts: { start: number; end: number; changed: boolean }[]; bParts: { start: number; end: number; changed: boolean }[] } {
+  const aChars = Array.from(a);
+  const bChars = Array.from(b);
+  const m = aChars.length;
+  const n = bChars.length;
+
+  // LCS DP 表
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = aChars[i] === bChars[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  // 回溯找出公共子序列
+  const aMarks: boolean[] = new Array(m).fill(false);
+  const bMarks: boolean[] = new Array(n).fill(false);
+  let i = 0, j = 0;
+  while (i < m && j < n) {
+    if (aChars[i] === bChars[j]) {
+      aMarks[i] = true;
+      bMarks[j] = true;
+      i++; j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+
+  // 将连续的 changed 字符合并为区间
+  function toRanges(marks: boolean[]): { start: number; end: number; changed: boolean }[] {
+    const parts: { start: number; end: number; changed: boolean }[] = [];
+    let start = 0;
+    for (let k = 1; k <= marks.length; k++) {
+      if (k === marks.length || marks[k] !== marks[k - 1]) {
+        parts.push({ start, end: k, changed: !marks[k - 1] });
+        start = k;
+      }
+    }
+    return parts;
+  }
+
+  return { aParts: toRanges(aMarks), bParts: toRanges(bMarks) };
+}
 
 /* ---- 同步滚动 ---- */
 const leftRef = ref<HTMLElement | null>(null);
@@ -59,10 +108,6 @@ function syncRight() {
 const message = useMessage();
 const { copyText } = useClipboard(message);
 
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
-
 /* ---- 调用 Rust 计算 diff ---- */
 async function compare() {
   computing.value = true;
@@ -84,14 +129,47 @@ async function compare() {
       ...toDecos(result.rightMarks.filter((m) => m.type === "added"), "diff-added"),
     ];
 
+    // 对 "changed" 行对计算字符级 diff
+    const leftLines = leftText.value.split("\n");
+    const rightLines = rightText.value.split("\n");
+    const leftChanged = result.leftMarks.filter((m) => m.type === "changed");
+    const rightChanged = result.rightMarks.filter((m) => m.type === "changed");
+    const lInline: InlineMark[] = [];
+    const rInline: InlineMark[] = [];
+
+    for (let idx = 0; idx < Math.min(leftChanged.length, rightChanged.length); idx++) {
+      const lm = leftChanged[idx];
+      const rm = rightChanged[idx];
+      for (let li = lm.from; li <= lm.to; li++) {
+        const ri = rm.from + (li - lm.from);
+        if (ri > rm.to) break;
+        const a = leftLines[li - 1] ?? "";
+        const b = rightLines[ri - 1] ?? "";
+        if (a === b) continue;
+        const { aParts, bParts } = computeCharDiff(a, b);
+        for (const part of aParts) {
+          if (part.changed) {
+            lInline.push({ line: li, from: part.start, to: part.end, class: "diff-char-changed" });
+          }
+        }
+        for (const part of bParts) {
+          if (part.changed) {
+            rInline.push({ line: ri, from: part.start, to: part.end, class: "diff-char-changed" });
+          }
+        }
+      }
+    }
+    leftInlineMarks.value = lInline;
+    rightInlineMarks.value = rInline;
+
     const rightAdded = result.rightMarks.filter((m) => m.type === "added").length;
-    const rightChanged = result.rightMarks.filter((m) => m.type === "changed").length;
+    const rightChangedCount = result.rightMarks.filter((m) => m.type === "changed").length;
     const leftRemoved = result.leftMarks.filter((m) => m.type === "removed").length;
-    const leftChanged = result.leftMarks.filter((m) => m.type === "changed").length;
+    const leftChangedCount = result.leftMarks.filter((m) => m.type === "changed").length;
 
     stats.value = {
-      added: rightAdded + rightChanged,
-      removed: leftRemoved + leftChanged,
+      added: rightAdded + rightChangedCount,
+      removed: leftRemoved + leftChangedCount,
     };
 
     mode.value = "compare";
@@ -104,6 +182,8 @@ async function compare() {
 
 function backToEdit() {
   mode.value = "edit";
+  leftInlineMarks.value = [];
+  rightInlineMarks.value = [];
 }
 
 function swapTexts() {
@@ -117,6 +197,8 @@ function clearAll() {
   rightText.value = "";
   leftMarks.value = [];
   rightMarks.value = [];
+  leftInlineMarks.value = [];
+  rightInlineMarks.value = [];
 }
 
 function copyDiff() {
@@ -220,6 +302,7 @@ function copyDiff() {
             language="plain"
             readonly
             :lineDecorations="leftMarks"
+            :inlineMarks="leftInlineMarks"
           />
         </div>
         <div class="editor-pane" ref="rightRef" @scroll="syncRight">
@@ -231,6 +314,7 @@ function copyDiff() {
             language="plain"
             readonly
             :lineDecorations="rightMarks"
+            :inlineMarks="rightInlineMarks"
           />
         </div>
       </template>
@@ -306,10 +390,15 @@ function copyDiff() {
   background: var(--danger-soft) !important;
 }
 :deep(.diff-added) {
-  background: rgba(74, 222, 128, 0.1) !important;
+  background: var(--success-soft, rgba(74, 222, 128, 0.1)) !important;
 }
 :deep(.diff-changed) {
-  background: rgba(245, 158, 11, 0.1) !important;
+  background: var(--warning-soft, rgba(245, 158, 11, 0.1)) !important;
+}
+:deep(.diff-char-changed) {
+  background: var(--warning-soft);
+  filter: brightness(1.3);
+  border-radius: 2px;
 }
 
 /* ---- 按钮微调 ---- */

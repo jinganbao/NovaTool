@@ -30,9 +30,9 @@ export function useAppUpdate(
         return;
       }
       showUpdateModal.value = true;
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (!options?.silent) {
-        message.error("检查更新失败: " + (e?.message ?? String(e)));
+        message.error("检查更新失败: " + ((e as Error)?.message ?? String(e)));
       }
     } finally {
       checkingUpdate.value = false;
@@ -57,8 +57,8 @@ export function useAppUpdate(
           updateProgressLabel.value = `正在下载... ${downMB} MB`;
         }
       });
-    } catch (e: any) {
-      message.error("安装更新失败: " + (e?.message ?? String(e)));
+    } catch (e: unknown) {
+      message.error("安装更新失败: " + ((e as Error)?.message ?? String(e)));
     } finally {
       installingUpdate.value = false;
     }

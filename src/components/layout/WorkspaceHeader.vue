@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import { h } from "vue";
 import { NTag } from "naive-ui";
-import type { Component } from "vue";
 import type { ToolItem } from "@/types/tools";
 
 defineProps<{ tool: ToolItem }>();
-
-function renderIcon(icon: Component, size = 17) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
 </script>
 
 <template>

@@ -42,16 +42,15 @@ function toggleGroup(key: string) {
       <div class="brand-mark"><Hammer :size="22" /></div>
       <div>
         <div class="brand-title">NovaTool</div>
-        <div class="brand-subtitle">Developer Toolbox</div>
       </div>
     </div>
 
-    <div class="search-wrap">
+    <div class="search-wrap" role="search">
       <Search :size="15" />
-      <input v-model="query" placeholder="搜索工具" />
+      <input v-model="query" placeholder="搜索工具" aria-label="搜索工具" />
     </div>
 
-    <nav class="tool-nav">
+    <nav class="tool-nav" aria-label="工具列表">
       <section v-for="group in filteredGroups" :key="group.key" class="nav-group">
         <button class="group-head" @click="toggleGroup(group.key)">
           <component :is="group.icon" :size="18" />
@@ -65,6 +64,7 @@ function toggleGroup(key: string) {
             :key="tool.key"
             class="tool-item"
             :class="{ active: props.activeTool === tool.key }"
+            :aria-current="props.activeTool === tool.key ? 'page' : undefined"
             @click="emit('update:activeTool', tool.key)"
           >
             <component :is="tool.icon" :size="18" />
@@ -73,10 +73,13 @@ function toggleGroup(key: string) {
           </button>
         </div>
       </section>
+      <div v-if="filteredGroups.length === 0" class="search-empty">
+        未找到匹配的工具
+      </div>
     </nav>
 
     <div class="sidebar-footer">
-      <button class="settings-button" type="button" @click="emit('settings')">
+      <button class="settings-button" type="button" aria-label="打开配置" @click="emit('settings')">
         <span>
           <Settings :size="15" />
           配置
@@ -226,6 +229,13 @@ function toggleGroup(key: string) {
   color: var(--text-muted);
 }
 
+.search-empty {
+  padding: 16px 8px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .sidebar-footer {
   flex-shrink: 0;
   padding-top: 10px;
@@ -264,7 +274,18 @@ function toggleGroup(key: string) {
 
 @media (max-width: 860px) {
   .sidebar {
-    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 201;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
   }
 }
 </style>

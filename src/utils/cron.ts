@@ -33,6 +33,21 @@ export function parseCron(expr: string): CronFields | null {
     if (!/^[\d\-\*\/,]+$/.test(part)) return null;
   }
 
+  // 值范围校验: minute:0-59, hour:0-23, day:1-31, month:1-12, weekday:0-7
+  const ranges: [string, number, number][] = [
+    [parts[0], 0, 59],
+    [parts[1], 0, 23],
+    [parts[2], 1, 31],
+    [parts[3], 1, 12],
+    [parts[4], 0, 7],
+  ];
+  for (const [field, min, max] of ranges) {
+    if (!validateFieldRange(field, min, max)) return null;
+  }
+  if (parts.length === 6 && !validateFieldRange(parts[5], 1970, 2099)) {
+    return null;
+  }
+
   return {
     minute: parts[0],
     hour: parts[1],
@@ -42,6 +57,18 @@ export function parseCron(expr: string): CronFields | null {
     year: parts[5] ?? "*",
     raw: trimmed,
   };
+}
+
+/** 校验单个 cron 字段中所有数值是否在有效范围内 */
+function validateFieldRange(field: string, min: number, max: number): boolean {
+  // 提取字段中的所有数值并校验范围
+  const numbers = field.match(/\d+/g);
+  if (!numbers) return true; // 只有 * 等通配符
+  for (const n of numbers) {
+    const v = parseInt(n, 10);
+    if (v < min || v > max) return false;
+  }
+  return true;
 }
 
 /** 判断某个值是否匹配 cron 字段（支持 * / - ,） */
@@ -186,5 +213,4 @@ export const PRESETS = [
   { label: "每年1月1日", value: "0 0 1 1 *" },
   { label: "工作日9点", value: "0 9 * * 1-5" },
   { label: "周末10点", value: "0 10 * * 0,6" },
-  { label: "每30秒模拟", value: "*/1 * * * *" },
 ];

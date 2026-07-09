@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { NModal, NSpace, NText, NButton, NProgress, NSpin } from "naive-ui";
+import { ref, onMounted } from "vue";
+import { NModal, NSpace, NText, NButton, NInputNumber, NProgress, NSelect, NSwitch } from "naive-ui";
+import { getVersion } from "@tauri-apps/api/app";
 import { Rocket } from "lucide-vue-next";
 import { themeModeOptions, themePresets } from "@/config/theme";
+import { allTools } from "@/config/tools";
 import { useConfig } from "@/composables/useConfig";
 import { useAppUpdate } from "@/composables/useAppUpdate";
 import { useMessage } from "naive-ui";
@@ -10,6 +12,15 @@ import { useMessage } from "naive-ui";
 const show = defineModel<boolean>("show", { required: true });
 const config = useConfig();
 const message = useMessage();
+const appVersion = ref("...");
+
+onMounted(async () => {
+  try {
+    appVersion.value = await getVersion();
+  } catch {
+    appVersion.value = "unknown";
+  }
+});
 
 const {
   checkingUpdate,
@@ -23,16 +34,14 @@ const {
   handleUpdateDownload,
 } = useAppUpdate(message);
 
-function setThemeMode(mode: string) {
-  if (mode === "dark" || mode === "light") {
-    config.themeMode = mode;
-  }
+function setThemeMode(mode: "dark" | "light" | "auto") {
+  config.themeMode = mode;
 }
 </script>
 
 <template>
   <!-- ====== 配置弹窗 ====== -->
-  <n-modal v-model:show="show" preset="card" title="配置" style="width: 520px">
+  <n-modal v-model:show="show" preset="card" title="配置" style="max-width: 520px; width: 90vw">
     <n-space vertical :size="16">
       <div class="config-modal-row">
         <n-text class="config-modal-label">主题色</n-text>
@@ -72,11 +81,35 @@ function setThemeMode(mode: string) {
       <div class="config-modal-row">
         <n-text class="config-modal-label">版本更新</n-text>
         <div style="display:flex;align-items:center;gap:8px">
+          <n-switch v-model:value="config.autoCheckUpdate" size="small" />
+          <span style="font-size:12px;color:var(--text-muted)">启动时自动检查</span>
           <n-button size="small" :loading="checkingUpdate" @click="checkForUpdates()">
             检查更新
           </n-button>
-          <span class="version-text">v1.0.0</span>
+          <span class="version-text">v{{ appVersion }}</span>
         </div>
+      </div>
+
+      <div class="config-modal-row">
+        <n-text class="config-modal-label">默认工具</n-text>
+        <n-select
+          v-model:value="config.defaultTool"
+          size="small"
+          style="width: 200px"
+          :options="allTools.map((t) => ({ label: t.title, value: t.key }))"
+        />
+      </div>
+
+      <div class="config-modal-row">
+        <n-text class="config-modal-label">编辑器字号</n-text>
+        <n-input-number
+          v-model:value="config.editorFontSize"
+          size="small"
+          style="width: 100px"
+          :min="10"
+          :max="22"
+          :step="1"
+        />
       </div>
     </n-space>
   </n-modal>

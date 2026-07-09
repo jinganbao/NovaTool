@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, h, ref } from "vue";
+import { computed, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { NButton, NInput, NSpace, NTag, NPopconfirm, useMessage } from "naive-ui";
 import { Copy, RefreshCw, Search, Skull, Wifi } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 类型 ---- */
@@ -35,10 +35,6 @@ const filtered = computed(() => {
 });
 
 /* ---- 工具 ---- */
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
-
 async function refresh() {
   loading.value = true;
   try {
@@ -62,7 +58,6 @@ async function killProcess(pid: number) {
 
 function copyRow(e: PortEntry) {
   void copyText(`${e.processName}\t${e.pid}\t${e.port}\t${e.protocol}`);
-  message.success("已复制");
 }
 
 // 初始化加载

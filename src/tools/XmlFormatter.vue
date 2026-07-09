@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { h, ref } from "vue";
+import { ref } from "vue";
 import { NButton, NSpace, useMessage } from "naive-ui";
 import { Copy, Minimize2, Sparkles } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import CodeEditor from "@/components/editor/CodeEditor.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { compressXml, formatXml } from "@/utils/formatters";
@@ -12,10 +12,6 @@ const { copyText } = useClipboard(message);
 const input = ref("<root><name>NovaTool</name><stack>Tauri + Vue3</stack></root>");
 const output = ref("");
 const error = ref("");
-
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
 
 function format() {
   try {
@@ -38,7 +34,6 @@ function copy() {
   void copyText(output.value);
 }
 
-defineExpose({ format, copy });
 </script>
 
 <template>

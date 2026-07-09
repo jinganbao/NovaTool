@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h, ref } from "vue";
+import { computed, ref } from "vue";
 import { NButton, NCheckbox, NInputNumber, NSlider, NSpace, NTag, useMessage } from "naive-ui";
 import { Copy, RefreshCw, ShieldCheck } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 字符集 ---- */
@@ -28,10 +28,6 @@ const password = ref("");
 /* ---- 工具 ---- */
 const message = useMessage();
 const { copyText } = useClipboard(message);
-
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
 
 /* ---- 生成 ---- */
 function generate() {
@@ -78,18 +74,19 @@ const entropy = computed(() => {
   return Math.round(length.value * Math.log2(poolSize));
 });
 
+type TagType = "default" | "success" | "warning" | "error" | "info";
+
 const strength = computed(() => {
   const e = entropy.value;
-  if (e < 40) return { label: "弱", color: "error", pct: Math.min(25, e / 40 * 25) };
-  if (e < 60) return { label: "一般", color: "warning", pct: 25 + (e - 40) / 20 * 25 };
-  if (e < 80) return { label: "强", color: "info", pct: 50 + (e - 60) / 20 * 25 };
-  return { label: "非常强", color: "success", pct: 75 + Math.min(25, (e - 80) / 40 * 25) };
+  if (e < 40) return { label: "弱", color: "error" as TagType, pct: Math.min(25, e / 40 * 25) };
+  if (e < 60) return { label: "一般", color: "warning" as TagType, pct: 25 + (e - 40) / 20 * 25 };
+  if (e < 80) return { label: "强", color: "info" as TagType, pct: 50 + (e - 60) / 20 * 25 };
+  return { label: "非常强", color: "success" as TagType, pct: 75 + Math.min(25, (e - 80) / 40 * 25) };
 });
 
 function copyPassword() {
   if (password.value) {
     void copyText(password.value);
-    message.success("已复制到剪贴板");
   }
 }
 </script>
@@ -116,7 +113,7 @@ function copyPassword() {
             :class="'fill-' + strength.color"
           ></div>
         </div>
-        <n-tag :type="strength.color as any" :bordered="false" size="small">
+        <n-tag :type="strength.color" :bordered="false" size="small">
           {{ strength.label }} · {{ entropy }} bit
         </n-tag>
       </div>
@@ -182,7 +179,7 @@ function copyPassword() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .card-head h2 {
@@ -196,9 +193,17 @@ function copyPassword() {
 .display-card {
   flex-shrink: 0;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-panel);
-  padding: 16px;
+  padding: 12px;
+}
+
+/* ---- 配置区 ---- */
+.config-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  padding: 12px;
 }
 
 .password-display {

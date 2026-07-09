@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { h, ref } from "vue";
+import { ref } from "vue";
 import { NButton, NCheckbox, NInputNumber, NRadio, NSpace, useMessage } from "naive-ui";
 import { Copy, Fingerprint, RefreshCw } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 配置 ---- */
@@ -17,10 +17,6 @@ const uuids = ref<string[]>([]);
 /* ---- 工具 ---- */
 const message = useMessage();
 const { copyText } = useClipboard(message);
-
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
 
 /* ---- v4 (crypto.randomUUID) ---- */
 function generateV4(): string {
@@ -76,12 +72,10 @@ generate();
 
 function copyAll() {
   void copyText(uuids.value.join("\n"));
-  message.success("已复制全部");
 }
 
 function copyOne(uuid: string) {
   void copyText(uuid);
-  message.success("已复制");
 }
 </script>
 

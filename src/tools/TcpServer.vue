@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { NButton, NInput, NSelect, NSpace, NTag, useMessage } from "naive-ui";
@@ -7,10 +7,12 @@ import {
   Copy,
   Play,
   RadioTower,
+  Send,
   Square,
   Trash2,
+  X,
 } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 类型 ---- */
@@ -83,15 +85,16 @@ async function setupListener() {
 
 onBeforeUnmount(() => {
   unlisten?.();
+  // 卸载时若服务端仍在运行，自动停止
+  if (running.value) {
+    void invoke("tcp_server_stop").catch(() => {});
+    running.value = false;
+  }
 });
 
 setupListener();
 
 /* ---- 工具函数 ---- */
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
-
 function appendLog(time: string, tag: string, header: string, cssClass: string, body?: string) {
   const parts: string[] = [];
   parts.push(`[${time}] `);
@@ -101,6 +104,11 @@ function appendLog(time: string, tag: string, header: string, cssClass: string, 
     parts.push(`\n${body}`);
   }
   logLines.value.push(parts.join(""));
+  // 限制日志条数，防止长时间运行内存持续增长（最多保留 5000 条）
+  const MAX_LOG_LINES = 5000;
+  if (logLines.value.length > MAX_LOG_LINES) {
+    logLines.value = logLines.value.slice(-MAX_LOG_LINES);
+  }
   void nextTick(() => {
     if (logRef.value) {
       logRef.value.scrollTop = logRef.value.scrollHeight;
@@ -139,6 +147,36 @@ async function stopServer() {
 
 function clearLog() {
   logLines.value = [];
+}
+
+/* ---- 主动发送 / 断开客户端 ---- */
+const serverSendText = ref("");
+const selectedSendClient = ref<string | null>(null);
+
+async function sendToClient() {
+  const cid = selectedSendClient.value;
+  const data = serverSendText.value.trim();
+  if (!cid || !data) {
+    message.warning("请选择客户端并输入发送内容");
+    return;
+  }
+  try {
+    await invoke("tcp_server_send", { clientId: cid, data });
+    serverSendText.value = "";
+    message.success("发送成功");
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function disconnectClient(clientId: string) {
+  try {
+    await invoke("tcp_server_disconnect_client", { clientId });
+    clients.value = clients.value.filter((c) => c.id !== clientId);
+    message.success("已断开客户端");
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : String(error));
+  }
 }
 </script>
 
@@ -198,11 +236,41 @@ function clearLog() {
         v-for="client in clients"
         :key="client.id"
         class="client-tag"
+        @click="selectedSendClient = client.id"
+        :class="{ 'client-tag-active': selectedSendClient === client.id }"
       >
         <span class="client-dot"></span>
         {{ client.id }}
         <span class="client-addr-short">{{ client.addr }}</span>
+        <button class="client-kick-btn" @click.stop="disconnectClient(client.id)" title="断开">
+          <X :size="12" />
+        </button>
       </span>
+    </div>
+
+    <!-- ========== 发送区（向客户端发送） ========== -->
+    <div v-if="running && clients.length > 0" class="server-send-bar">
+      <n-select
+        v-model:value="selectedSendClient"
+        size="small"
+        placeholder="选择目标客户端"
+        :options="clients.map((c) => ({ label: `${c.id} (${c.addr})`, value: c.id }))"
+        class="send-client-select"
+      />
+      <n-input
+        v-model:value="serverSendText"
+        size="small"
+        placeholder="输入发送内容..."
+        @keyup.enter="sendToClient"
+        class="send-text-input"
+      />
+      <n-button
+        size="tiny"
+        secondary
+        :render-icon="() => renderIcon(Send)"
+        :disabled="!selectedSendClient || !serverSendText.trim()"
+        @click="sendToClient"
+      >发送</n-button>
     </div>
 
     <!-- ========== 日志区：独占下方全部空间 ========== -->
@@ -346,6 +414,47 @@ function clearLog() {
   border-radius: 50%;
   background: var(--success);
   flex-shrink: 0;
+}
+
+.client-tag-active {
+  outline: 1px solid var(--brand);
+  background: var(--brand-soft);
+}
+
+.client-kick-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.client-kick-btn:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.server-send-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.send-client-select {
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.send-text-input {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---- 日志区：独占全部剩余空间 ---- */

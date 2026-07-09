@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { h, ref } from "vue";
+import { ref } from "vue";
 import { NButton, NSpace, useMessage } from "naive-ui";
 import { Copy, Eraser, Hash } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import CodeEditor from "@/components/editor/CodeEditor.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { md5, sm3, sha1, sha256, sha512 } from "@/utils/hash";
@@ -34,10 +34,6 @@ const computing = ref(false);
 const results = ref<Map<AlgoKey, string>>(new Map());
 
 /* ---- 工具 ---- */
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
-
 function toggleAlgo(key: AlgoKey) {
   const next = new Set(selectedAlgos.value);
   if (next.has(key)) {

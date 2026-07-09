@@ -9,7 +9,7 @@ import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, default
 import { highlightActiveLine, highlightActiveLineGutter, lineNumbers } from "@codemirror/view";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { Codemirror } from "vue-codemirror";
-import { useConfig } from "@/composables/useConfig";
+import { useConfig, resolvedThemeMode } from "@/composables/useConfig";
 
 type CodeLanguage = "json" | "xml" | "plain";
 
@@ -19,17 +19,26 @@ export interface LineDecoration {
   class: string; // CSS class
 }
 
+export interface InlineMark {
+  line: number;      // 1-based line number
+  from: number;      // 0-based char offset within the line
+  to: number;        // 0-based char offset within the line (exclusive)
+  class: string;     // CSS class
+}
+
 const props = withDefaults(defineProps<{
   modelValue: string;
   language?: CodeLanguage;
   readonly?: boolean;
   placeholder?: string;
   lineDecorations?: LineDecoration[];
+  inlineMarks?: InlineMark[];
 }>(), {
   language: "plain",
   readonly: false,
   placeholder: "",
   lineDecorations: () => [],
+  inlineMarks: () => [],
 });
 
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
@@ -40,10 +49,15 @@ const editorView = ref<EditorView | null>(null);
 
 function onReady(payload: { view: EditorView }) {
   editorView.value = payload.view;
-  // 若挂载前 lineDecorations 已设置，立即应用
+  // 若挂载前装饰已设置，立即应用
   if (props.lineDecorations.length > 0) {
     payload.view.dispatch({
       effects: setLineDecos.of(buildLineDecorations(props.lineDecorations)),
+    });
+  }
+  if (props.inlineMarks.length > 0) {
+    payload.view.dispatch({
+      effects: setInlineDecos.of(buildInlineDecorations(props.inlineMarks)),
     });
   }
 }
@@ -82,6 +96,7 @@ const lineDecoField = StateField.define<DecorationSet>({
 function buildLineDecorations(decos: LineDecoration[]): DecorationSet {
   const state = editorView.value?.state;
   if (!state) return Decoration.none;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const marks: any[] = [];
   const doc = state.doc;
   for (const d of decos) {
@@ -101,6 +116,52 @@ watch(
     if (!view) return;
     view.dispatch({
       effects: setLineDecos.of(buildLineDecorations(decos ?? [])),
+    });
+  },
+  { deep: true },
+);
+
+/* ---- 行内字符标记装饰 ---- */
+const setInlineDecos = StateEffect.define<DecorationSet>();
+
+const inlineDecoField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(decos, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setInlineDecos)) return e.value;
+    }
+    return decos.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+function buildInlineDecorations(marks: InlineMark[]): DecorationSet {
+  const state = editorView.value?.state;
+  if (!state) return Decoration.none;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result: any[] = [];
+  const doc = state.doc;
+  for (const mark of marks) {
+    if (mark.line < 1 || mark.line > doc.lines) continue;
+    const line = doc.line(mark.line);
+    const from = Math.min(line.from + mark.from, line.to);
+    const to = Math.min(line.from + mark.to, line.to);
+    if (from < to) {
+      result.push(Decoration.mark({ class: mark.class }).range(from, to));
+    }
+  }
+  return Decoration.set(result, true);
+}
+
+watch(
+  () => props.inlineMarks,
+  (marks) => {
+    const view = editorView.value;
+    if (!view) return;
+    view.dispatch({
+      effects: setInlineDecos.of(buildInlineDecorations(marks ?? [])),
     });
   },
   { deep: true },
@@ -128,7 +189,8 @@ const extensions = computed(() => {
     EditorState.readOnly.of(props.readonly),
     EditorView.editable.of(!props.readonly),
     lineDecoField,
-    ...(config.themeMode === "dark" ? [oneDark] : []),
+    inlineDecoField,
+    ...(resolvedThemeMode.value === "dark" ? [oneDark] : []),
     languageExtension,
   ];
 });
@@ -166,7 +228,7 @@ const extensions = computed(() => {
   height: 100%;
   background: var(--bg-input);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: v-bind(config.editorFontSize + "px");
   line-height: 1.55;
   outline: none;
 }
@@ -183,11 +245,11 @@ const extensions = computed(() => {
 
 .code-editor :deep(.cm-activeLine),
 .code-editor :deep(.cm-activeLineGutter) {
-  background: rgba(61, 214, 198, 0.06);
+  background: var(--brand-soft, rgba(61, 214, 198, 0.06));
 }
 
 .code-editor :deep(.cm-focused) {
-  outline: 1px solid rgba(61, 214, 198, 0.7);
+  outline: 1px solid var(--brand, rgba(61, 214, 198, 0.7));
 }
 
 .code-editor.readonly :deep(.cm-cursor) {

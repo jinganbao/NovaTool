@@ -11,12 +11,13 @@ export const themePresets = [
   { name: "NovaAI", color: "#8BDAFF" },
 ];
 
-export const themeModeOptions = [
+export const themeModeOptions: { label: string; value: AppConfig["themeMode"] }[] = [
   { label: "暗色", value: "dark" },
   { label: "亮色", value: "light" },
+  { label: "跟随系统", value: "auto" },
 ];
 
-export function getNaiveTheme(mode: AppConfig["themeMode"]) {
+export function getNaiveTheme(mode: "dark" | "light") {
   return mode === "dark" ? darkTheme : null;
 }
 
@@ -48,9 +49,9 @@ export function rgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-export function getThemeOverrides(config: AppConfig) {
+export function getThemeOverrides(config: AppConfig, resolvedMode: "dark" | "light") {
   const accent = config.themeAccent || brandColor;
-  const dark = config.themeMode === "dark";
+  const dark = resolvedMode === "dark";
   return {
     common: {
       primaryColor: accent,
@@ -66,14 +67,14 @@ export function getThemeOverrides(config: AppConfig) {
       textColorBase: dark ? "#E7ECF3" : "#17202A",
       textColor1: dark ? "#E7ECF3" : "#17202A",
       textColor2: dark ? "#9AA5B5" : "#5D6978",
-      textColor3: dark ? "#6F7A89" : "#7B8797",
+      textColor3: dark ? "#909CAC" : "#6A7585",
     },
   };
 }
 
-export function getThemeVars(config: AppConfig) {
+export function getThemeVars(config: AppConfig, resolvedMode: "dark" | "light") {
   const accent = config.themeAccent || brandColor;
-  const dark = config.themeMode === "dark";
+  const dark = resolvedMode === "dark";
   return {
     "--bg-app": dark ? "#111418" : "#F7F9FC",
     "--bg-sider": dark ? "#15191E" : "#EEF3F7",
@@ -85,7 +86,7 @@ export function getThemeVars(config: AppConfig) {
     "--border-strong": dark ? "#39424E" : "#BCC8D6",
     "--text-primary": dark ? "#E7ECF3" : "#17202A",
     "--text-secondary": dark ? "#9AA5B5" : "#5D6978",
-    "--text-muted": dark ? "#6F7A89" : "#7B8797",
+    "--text-muted": dark ? "#909CAC" : "#6A7585",
     "--brand": accent,
     "--brand-hover": mix(accent, "#FFFFFF", 0.18),
     "--brand-active": mix(accent, "#000000", 0.18),
@@ -95,6 +96,9 @@ export function getThemeVars(config: AppConfig) {
     "--warning": dark ? "#FBBF24" : "#B7791F",
     "--success": dark ? "#4ADE80" : "#15803D",
     "--danger-soft": dark ? "rgba(248, 113, 113, 0.12)" : "rgba(220, 38, 38, 0.08)",
+    "--success-soft": dark ? "rgba(74, 222, 128, 0.1)" : "rgba(21, 128, 61, 0.1)",
+    "--warning-soft": dark ? "rgba(245, 158, 11, 0.12)" : "rgba(217, 119, 6, 0.1)",
+    "--overlay": dark ? "rgba(0, 0, 0, 0.5)" : "rgba(15, 23, 42, 0.15)",
     "--shadow-strong": dark ? "rgba(0, 0, 0, 0.6)" : "rgba(15, 23, 42, 0.16)",
     "--swatch-ring": dark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.12)",
   };

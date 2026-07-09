@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { h, ref } from "vue";
+import { ref } from "vue";
 import { NButton, NSpace, useMessage } from "naive-ui";
 import { ArrowLeftRight, Copy, Eraser } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import CodeEditor from "@/components/editor/CodeEditor.vue";
 import { useClipboard } from "@/composables/useClipboard";
 
@@ -12,11 +12,6 @@ const { copyText } = useClipboard(message);
 
 const input = ref("Hello, 你好世界！");
 const output = ref("");
-
-/* ---- 工具 ---- */
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
 
 /* ---- 编码 ---- */
 function encode() {

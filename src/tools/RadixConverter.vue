@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h, ref } from "vue";
+import { computed, ref } from "vue";
 import { NButton, NInput, NSelect, useMessage } from "naive-ui";
 import { Copy } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 类型 ---- */
@@ -88,14 +88,9 @@ const results = computed<ConversionLine[]>(() => {
 });
 
 /* ---- 工具 ---- */
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
-
 function copyVal(val: string) {
   if (val && val !== "输入无效" && val !== "解析失败") {
     void copyText(val);
-    message.success("已复制");
   }
 }
 </script>
@@ -120,7 +115,7 @@ function copyVal(val: string) {
         />
       </div>
       <div class="input-hint">
-        当前：{{ bases.find((b) => b.value === sourceBase)?.digits.replace(/0-9A-F/, "0-9 A-F") }}
+        当前：{{ bases.find((b) => b.value === sourceBase)?.digits.split("").join(" ") }}
         前缀 {{ bases.find((b) => b.value === sourceBase)?.prefix || "无" }}
       </div>
     </div>

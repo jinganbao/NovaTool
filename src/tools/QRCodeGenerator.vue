@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { h, ref, watch } from "vue";
+import { ref, watch, onBeforeUnmount } from "vue";
 import QRCode from "qrcode";
 import { NButton, NInputNumber, NRadio, NSpace, useMessage } from "naive-ui";
 import { Copy, Download, Eraser, QrCode } from "lucide-vue-next";
-import type { Component } from "vue";
+import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 配置 ---- */
@@ -26,10 +26,6 @@ const levelOptions = [
 /* ---- 工具 ---- */
 const message = useMessage();
 const { copyText } = useClipboard(message);
-
-function renderIcon(icon: Component, size = 14) {
-  return h(icon, { size, strokeWidth: 2.1 });
-}
 
 /* ---- 生成 ---- */
 async function generate() {
@@ -59,6 +55,8 @@ watch([input, errorLevel, qrSize, darkColor, lightColor], () => {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(generate, 300);
 });
+
+onBeforeUnmount(() => clearTimeout(debounceTimer));
 
 function clearAll() {
   input.value = "";
@@ -93,6 +91,11 @@ function downloadPng() {
       URL.revokeObjectURL(downloadUrl);
       message.success("已下载 PNG");
     }, "image/png");
+  };
+
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    message.error("图片生成失败");
   };
 
   img.src = url;
@@ -231,7 +234,7 @@ async function copyImage() {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--bg-panel);
-  padding: 14px;
+  padding: 12px;
 }
 
 .pane-head {
