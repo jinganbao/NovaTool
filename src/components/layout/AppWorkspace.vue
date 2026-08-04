@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, h, ref, defineAsyncComponent, type Component } from "vue";
-import { Menu, Loader2 } from "lucide-vue-next";
+import { computed, h, ref, watch, defineAsyncComponent, type Component } from "vue";
+import { Loader2 } from "lucide-vue-next";
 import { allTools } from "@/config/tools";
 import { getThemeVars } from "@/config/theme";
 import { useConfig, resolvedThemeMode } from "@/composables/useConfig";
 import type { ToolItem, ToolKey } from "@/types/tools";
-import AppSidebar from "@/components/layout/AppSidebar.vue";
+import AppIconBar from "@/components/layout/AppIconBar.vue";
 import CommandPalette from "@/components/layout/CommandPalette.vue";
 import ErrorBoundary from "@/components/layout/ErrorBoundary.vue";
 import SettingsModal from "@/components/layout/SettingsModal.vue";
@@ -50,7 +50,6 @@ const { recordUse } = useToolHistory();
 const activeTool = ref<ToolKey>((config.defaultTool as ToolKey) || "json-format");
 const showSettings = ref(false);
 const showPalette = ref(false);
-const mobileNavOpen = ref(false);
 
 const currentTool = computed<ToolItem>(() =>
   allTools.find((tool) => tool.key === activeTool.value) ?? allTools[0],
@@ -58,34 +57,43 @@ const currentTool = computed<ToolItem>(() =>
 const themeVars = computed(() => getThemeVars(config, resolvedThemeMode.value));
 const activeComponent = computed(() => toolComponents[activeTool.value]);
 
+const errorBoundaryRef = ref<InstanceType<typeof ErrorBoundary> | null>(null);
+
 function selectTool(key: ToolKey) {
   activeTool.value = key;
   recordUse(key);
-  mobileNavOpen.value = false;
 }
+
+// 切换工具时重置错误边界，避免上一个工具的错误遮挡新工具
+watch(activeTool, () => {
+  errorBoundaryRef.value?.reset();
+});
 </script>
 
 <template>
   <div class="app-shell" :style="themeVars">
-    <!-- 小屏导航触发器 -->
-    <button class="mobile-nav-toggle" aria-label="打开工具菜单" @click="mobileNavOpen = true">
-      <Menu :size="20" />
-    </button>
-
-    <!-- 小屏遮罩 -->
-    <div v-if="mobileNavOpen" class="mobile-nav-overlay" @click="mobileNavOpen = false" />
-
-    <AppSidebar
-      :class="{ 'mobile-open': mobileNavOpen }"
+    <AppIconBar
       :active-tool="activeTool"
       @update:active-tool="selectTool"
-      @settings="showSettings = true; mobileNavOpen = false"
+      @settings="showSettings = true"
     />
 
     <main class="workspace">
-      <WorkspaceHeader :tool="currentTool" />
-      <ErrorBoundary>
-        <component :is="activeComponent" v-if="activeComponent" class="tool-panel" />
+      <WorkspaceHeader
+        :tool="currentTool"
+        @command="showPalette = true"
+        @settings="showSettings = true"
+      />
+
+      <ErrorBoundary ref="errorBoundaryRef">
+        <KeepAlive>
+          <component
+            :is="activeComponent"
+            :key="activeTool"
+            v-if="activeComponent"
+            class="tool-panel"
+          />
+        </KeepAlive>
       </ErrorBoundary>
     </main>
 
@@ -99,7 +107,7 @@ function selectTool(key: ToolKey) {
   height: 100vh;
   min-width: 960px;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 56px minmax(0, 1fr);
   background: var(--bg-app);
   color: var(--text-primary);
   overflow: hidden;
@@ -110,80 +118,39 @@ function selectTool(key: ToolKey) {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0;
   overflow: hidden;
 }
 
 .workspace :deep(.tool-panel) {
   padding: 12px;
+  flex: 1;
+  min-height: 0;
 }
 
-/* 异步组件加载状态 */
-.workspace :deep(.async-loading) {
+/* 异步加载动画 */
+:deep(.async-loading) {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--text-muted);
   font-size: 13px;
 }
 
-.workspace :deep(.async-spinner) {
-  animation: spin 1s linear infinite;
+:deep(.async-spinner) {
+  animation: async-spin 0.9s linear infinite;
+  color: var(--brand);
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@keyframes async-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.workspace :deep(.async-loading-text) {
+:deep(.async-loading-text) {
   color: var(--text-muted);
-}
-
-.mobile-nav-toggle {
-  display: none;
-}
-
-@media (max-width: 1160px) {
-  .app-shell {
-    grid-template-columns: 224px minmax(0, 1fr);
-    min-width: 760px;
-  }
-}
-
-@media (max-width: 860px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-    min-width: 0;
-  }
-
-  .workspace {
-    padding: 0;
-  }
-
-  .mobile-nav-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: fixed;
-    top: 8px;
-    left: 8px;
-    z-index: 200;
-    width: 36px;
-    height: 36px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    cursor: pointer;
-  }
-
-  .mobile-nav-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-    background: var(--overlay, rgba(0, 0, 0, 0.4));
-  }
 }
 </style>

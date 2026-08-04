@@ -12,6 +12,8 @@ onErrorCaptured((err: unknown) => {
 function retry() {
   error.value = null;
 }
+
+defineExpose({ reset: retry });
 </script>
 
 <template>

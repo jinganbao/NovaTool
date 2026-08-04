@@ -184,9 +184,9 @@ async function disconnectClient(clientId: string) {
   <section class="tool-panel tcp-server">
     <!-- ========== 顶部：连接栏 ========== -->
     <div class="conn-bar">
-      <div class="conn-row">
-        <label class="conn-label"
-          >监听端口
+      <div class="conn-form">
+        <label class="field field-tight">
+          <span class="field-label">监听端口</span>
           <n-input
             v-model:value="port"
             size="small"
@@ -194,6 +194,8 @@ async function disconnectClient(clientId: string) {
             @keyup.enter="startServer"
           />
         </label>
+      </div>
+      <div class="conn-actions">
         <n-space :size="8" align="center">
           <n-button
             v-if="!running"
@@ -336,22 +338,44 @@ async function disconnectClient(clientId: string) {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--bg-panel);
-  padding: 8px 12px;
-}
-
-.conn-row {
+  padding: 10px 12px;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.conn-label {
-  color: var(--text-muted);
-  font-size: 12px;
+.conn-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.field {
+  flex: 1 1 100px;
+  min-width: 100px;
   display: grid;
   gap: 4px;
-  width: 120px;
+}
+
+.field-tight {
+  flex: 0.8 1 120px;
+  min-width: 120px;
+}
+
+.field-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.conn-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
 }
 
 .status-dot {
@@ -528,13 +552,9 @@ async function disconnectClient(clientId: string) {
 
 /* ---- 响应式 ---- */
 @media (max-width: 700px) {
-  .conn-row {
+  .conn-actions {
     flex-direction: column;
-    align-items: stretch;
-  }
-
-  .conn-label {
-    width: 100%;
+    align-items: flex-start;
   }
 }
 </style>

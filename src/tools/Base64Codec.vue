@@ -4,6 +4,7 @@ import { NButton, NSpace, useMessage } from "naive-ui";
 import { ArrowLeftRight, Copy, Eraser } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import CodeEditor from "@/components/editor/CodeEditor.vue";
+import DualPaneTool from "@/components/layout/DualPaneTool.vue";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 状态 ---- */
@@ -64,12 +65,9 @@ function swap() {
 </script>
 
 <template>
-  <section class="tool-panel split-panel">
-    <!-- ====== 左：输入 ====== -->
-    <div class="editor-pane">
-      <div class="pane-head">
-        <h2>原始内容</h2>
-      </div>
+  <DualPaneTool>
+    <template #left-title>原始内容</template>
+    <template #left>
       <div class="action-bar">
         <n-space :size="6">
           <n-button size="tiny" type="primary" :render-icon="() => renderIcon(ArrowLeftRight)" @click="encode"
@@ -82,68 +80,20 @@ function swap() {
         </n-space>
       </div>
       <CodeEditor v-model="input" language="plain" placeholder="输入要编解码的内容…" />
-    </div>
+    </template>
 
-    <!-- ====== 右：结果 ====== -->
-    <div class="editor-pane">
-      <div class="pane-head">
-        <h2>结果</h2>
-        <div class="pane-head-actions">
-          <n-button size="tiny" secondary :render-icon="() => renderIcon(Copy)" @click="copyResult">复制</n-button>
-          <n-button size="tiny" quaternary :render-icon="() => renderIcon(ArrowLeftRight)" @click="swap" title="交换输入和结果" />
-        </div>
-      </div>
+    <template #right-title>结果</template>
+    <template #right-actions>
+      <n-button size="tiny" secondary :render-icon="() => renderIcon(Copy)" @click="copyResult">复制</n-button>
+      <n-button size="tiny" quaternary :render-icon="() => renderIcon(ArrowLeftRight)" @click="swap" title="交换输入和结果" />
+    </template>
+    <template #right>
       <CodeEditor v-model="output" language="plain" readonly placeholder="点击编码或解码查看结果" />
-    </div>
-  </section>
+    </template>
+  </DualPaneTool>
 </template>
 
 <style scoped>
-.tool-panel {
-  flex: 1;
-  min-height: 0;
-  box-sizing: border-box;
-}
-
-.split-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-}
-
-.editor-pane {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  padding: 12px;
-}
-
-.pane-head {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.pane-head h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.pane-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .action-bar {
   flex-shrink: 0;
   margin-bottom: 8px;
@@ -152,11 +102,5 @@ function swap() {
 :deep(.n-button) {
   height: 28px;
   font-size: 12px;
-}
-
-@media (max-width: 860px) {
-  .split-panel {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

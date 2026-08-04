@@ -1,6 +1,6 @@
 [package]
 name = "NovaTool"
-version = "1.0.3"
+version = "1.0.4"
 description = "程序员常用开发工具箱"
 authors = ["Sunshine"]
 edition = "2021"

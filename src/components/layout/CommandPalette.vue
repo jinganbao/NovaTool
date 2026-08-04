@@ -111,6 +111,7 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
 <template>
   <div v-if="open" class="palette-overlay" @click="open = false">
     <div class="palette-dialog" @click.stop>
+      <div class="palette-accent" />
       <div class="palette-search">
         <Search :size="15" class="search-icon" />
         <input
@@ -156,6 +157,7 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
   display: flex;
   justify-content: center;
   padding-top: 15vh;
+  animation: palette-fade 0.15s ease;
 }
 
 .palette-dialog {
@@ -163,12 +165,34 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
   max-width: 92vw;
   max-height: 60vh;
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--bg-panel);
-  box-shadow: 0 16px 48px var(--shadow-strong);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  animation: palette-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  align-self: flex-start;
+}
+
+@keyframes palette-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes palette-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
+/* 顶部品牌渐变细线 */
+.palette-accent {
+  height: 2px;
+  background: var(--brand-gradient);
+  flex-shrink: 0;
 }
 
 .palette-search {
@@ -182,6 +206,11 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
 .search-icon {
   color: var(--text-muted);
   flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.palette-search:focus-within .search-icon {
+  color: var(--brand);
 }
 
 .palette-search input {
@@ -245,6 +274,10 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
 .palette-item.active,
 .palette-item:hover {
   background: var(--brand-soft);
+}
+
+.palette-item.active > svg {
+  color: var(--brand);
 }
 
 .palette-item-title {

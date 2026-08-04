@@ -41,7 +41,7 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
 
 <template>
   <!-- ====== 配置弹窗 ====== -->
-  <n-modal v-model:show="show" preset="card" title="配置" style="max-width: 520px; width: 90vw">
+  <n-modal v-model:show="show" preset="card" title="配置" class="nova-modal" style="max-width: 520px; width: 90vw">
     <n-space vertical :size="16">
       <div class="config-modal-row">
         <n-text class="config-modal-label">主题色</n-text>
@@ -115,7 +115,7 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
   </n-modal>
 
   <!-- ====== 更新弹窗 ====== -->
-  <n-modal v-model:show="showUpdateModal" preset="card" title="版本更新" style="width: 420px">
+  <n-modal v-model:show="showUpdateModal" preset="card" title="版本更新" class="nova-modal" style="width: 420px">
     <n-spin :show="checkingUpdate && !updateInfo">
       <!-- 下载中 -->
       <template v-if="installingUpdate">
@@ -176,6 +176,12 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
 </template>
 
 <style scoped>
+/* ---- 弹窗统一外观 ---- */
+:deep(.nova-modal) {
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
 .config-modal-row {
   display: flex;
   align-items: center;

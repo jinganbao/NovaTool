@@ -196,10 +196,9 @@ function copyOne(uuid: string) {
   width: 80px;
 }
 
-/* ---- 结果 ---- */
+/* ---- 结果：自适应高度，超出滚动 ---- */
 .results-card {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-subtle);
@@ -209,8 +208,7 @@ function copyOne(uuid: string) {
 }
 
 .results-list {
-  flex: 1;
-  min-height: 0;
+  max-height: 320px;
   overflow-y: auto;
   display: grid;
   gap: 6px;

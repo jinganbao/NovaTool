@@ -99,7 +99,11 @@ export function getThemeVars(config: AppConfig, resolvedMode: "dark" | "light") 
     "--success-soft": dark ? "rgba(74, 222, 128, 0.1)" : "rgba(21, 128, 61, 0.1)",
     "--warning-soft": dark ? "rgba(245, 158, 11, 0.12)" : "rgba(217, 119, 6, 0.1)",
     "--overlay": dark ? "rgba(0, 0, 0, 0.5)" : "rgba(15, 23, 42, 0.15)",
+    "--shadow-sm": dark ? "0 1px 2px rgba(0,0,0,0.4)" : "0 1px 2px rgba(15,23,42,0.08)",
+    "--shadow-md": dark ? "0 4px 12px rgba(0,0,0,0.45)" : "0 4px 12px rgba(15,23,42,0.12)",
+    "--shadow-lg": dark ? "0 12px 32px rgba(0,0,0,0.55)" : "0 12px 32px rgba(15,23,42,0.18)",
     "--shadow-strong": dark ? "rgba(0, 0, 0, 0.6)" : "rgba(15, 23, 42, 0.16)",
     "--swatch-ring": dark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.12)",
+    "--brand-gradient": `linear-gradient(135deg, ${accent}, ${mix(accent, "#000000", 0.25)})`,
   };
 }

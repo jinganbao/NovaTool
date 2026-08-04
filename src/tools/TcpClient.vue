@@ -362,32 +362,35 @@ async function sendPayload() {
 
 <template>
   <section class="tool-panel tcp-client">
-    <!-- ========== 顶部：连接栏 ========== -->
+    <!-- ========== 顶部：连接配置 ========== -->
     <div class="conn-bar">
-      <div class="conn-row">
-        <n-select
-          v-model:value="selectedConnectionId"
-          size="small"
-          clearable
-          placeholder="选择常用连接"
-          :options="connectionOptions"
-          class="conn-select"
-          @update:value="applyConnection"
-        />
-        <label class="conn-label"
-          >名称
+      <div class="conn-form">
+        <div class="field field-wide">
+          <span class="field-label">常用连接</span>
+          <n-select
+            v-model:value="selectedConnectionId"
+            size="small"
+            clearable
+            placeholder="选择常用连接"
+            :options="connectionOptions"
+            class="conn-select"
+            @update:value="applyConnection"
+          />
+        </div>
+        <label class="field">
+          <span class="field-label">名称</span>
           <n-input v-model:value="connectionName" size="small" />
         </label>
-        <label class="conn-label"
-          >Host
+        <label class="field">
+          <span class="field-label">Host</span>
           <n-input v-model:value="host" size="small" />
         </label>
-        <label class="conn-label"
-          >Port
+        <label class="field">
+          <span class="field-label">Port</span>
           <n-input v-model:value="port" size="small" @keyup.enter="sendPayload" />
         </label>
-        <label class="conn-label"
-          >编码
+        <label class="field">
+          <span class="field-label">编码</span>
           <n-select
             v-model:value="mode"
             size="small"
@@ -397,10 +400,13 @@ async function sendPayload() {
             ]"
           />
         </label>
-        <label class="conn-label"
-          >超时(ms)
+        <label class="field field-tight">
+          <span class="field-label">超时(ms)</span>
           <n-input v-model:value="timeoutMs" size="small" />
         </label>
+      </div>
+
+      <div class="conn-actions">
         <n-space :size="6">
           <n-button size="tiny" secondary :render-icon="() => renderIcon(Save)" @click="saveConnection"
             >保存</n-button
@@ -411,7 +417,8 @@ async function sendPayload() {
             :render-icon="() => renderIcon(Trash2)"
             @click="deleteConnection"
           />
-          <div class="action-divider"></div>
+        </n-space>
+        <n-space :size="6">
           <n-button
             v-if="!connId"
             size="tiny"
@@ -590,35 +597,48 @@ async function sendPayload() {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--bg-panel);
-  padding: 8px 10px;
-}
-
-.conn-row {
+  padding: 10px 12px;
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.conn-form {
+  display: flex;
   flex-wrap: wrap;
+  gap: 8px 10px;
 }
 
-.conn-select {
-  width: 180px;
-  flex-shrink: 0;
-}
-
-.conn-label {
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: 12px;
+.field {
+  flex: 1 1 100px;
+  min-width: 100px;
   display: grid;
   gap: 4px;
 }
 
-.conn-label:has(.n-input) {
-  width: 100px;
+.field-wide {
+  flex: 1.5 1 170px;
 }
 
-.conn-label:has(.n-select) {
-  width: 90px;
+.field-tight {
+  flex: 0.8 1 90px;
+  min-width: 90px;
+}
+
+.field-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.conn-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
 }
 
 /* ---- 公共：section head ---- */
@@ -798,18 +818,6 @@ async function sendPayload() {
 
 /* ---- 响应式 ---- */
 @media (max-width: 1100px) {
-  .conn-select {
-    width: 140px;
-  }
-
-  .conn-label:has(.n-input) {
-    width: 80px;
-  }
-
-  .conn-label:has(.n-select) {
-    width: 80px;
-  }
-
   .payload-name {
     width: 80px;
   }
@@ -820,18 +828,6 @@ async function sendPayload() {
 }
 
 @media (max-width: 860px) {
-  .conn-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .conn-select,
-  .conn-label,
-  .conn-label:has(.n-input),
-  .conn-label:has(.n-select) {
-    width: 100%;
-  }
-
   .section-head {
     flex-direction: column;
     align-items: flex-start;

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "NovaTool",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "identifier": "com.sunshine.NovaTool",
   "build": {
     "frontendDist": "../dist",
@@ -18,7 +18,9 @@
         "minWidth": 960,
         "minHeight": 620,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
