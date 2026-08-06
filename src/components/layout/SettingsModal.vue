@@ -1,38 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { NModal, NSpace, NText, NButton, NInputNumber, NProgress, NSelect, NSwitch } from "naive-ui";
-import { getVersion } from "@tauri-apps/api/app";
-import { Rocket } from "lucide-vue-next";
+import { NModal, NSpace, NText, NInputNumber, NSelect } from "naive-ui";
 import { themeModeOptions, themePresets } from "@/config/theme";
 import { allTools } from "@/config/tools";
 import { useConfig } from "@/composables/useConfig";
-import { useAppUpdate } from "@/composables/useAppUpdate";
-import { useMessage } from "naive-ui";
 
 const show = defineModel<boolean>("show", { required: true });
+
 const config = useConfig();
-const message = useMessage();
-const appVersion = ref("...");
-
-onMounted(async () => {
-  try {
-    appVersion.value = await getVersion();
-  } catch {
-    appVersion.value = "unknown";
-  }
-});
-
-const {
-  checkingUpdate,
-  showUpdateModal,
-  updateInfo,
-  installingUpdate,
-  updateProgressLabel,
-  updateProgressPercentage,
-  updateTotal,
-  checkForUpdates,
-  handleUpdateDownload,
-} = useAppUpdate(message);
 
 function setThemeMode(mode: "dark" | "light" | "auto") {
   config.themeMode = mode;
@@ -79,18 +53,6 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
       </div>
 
       <div class="config-modal-row">
-        <n-text class="config-modal-label">版本更新</n-text>
-        <div style="display:flex;align-items:center;gap:8px">
-          <n-switch v-model:value="config.autoCheckUpdate" size="small" />
-          <span style="font-size:12px;color:var(--text-muted)">启动时自动检查</span>
-          <n-button size="small" :loading="checkingUpdate" @click="checkForUpdates()">
-            检查更新
-          </n-button>
-          <span class="version-text">v{{ appVersion }}</span>
-        </div>
-      </div>
-
-      <div class="config-modal-row">
         <n-text class="config-modal-label">默认工具</n-text>
         <n-select
           v-model:value="config.defaultTool"
@@ -114,67 +76,7 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
     </n-space>
   </n-modal>
 
-  <!-- ====== 更新弹窗 ====== -->
-  <n-modal v-model:show="showUpdateModal" preset="card" title="版本更新" class="nova-modal" style="width: 420px">
-    <n-spin :show="checkingUpdate && !updateInfo">
-      <!-- 下载中 -->
-      <template v-if="installingUpdate">
-        <n-space vertical :size="16">
-          <n-text>{{ updateProgressLabel }}</n-text>
-          <n-progress
-            v-if="updateTotal > 0"
-            type="line"
-            :percentage="updateProgressPercentage"
-            :show-indicator="true"
-            :color="'var(--brand)'"
-          />
-          <n-progress v-else type="line" :show-indicator="false" status="info" processing />
-        </n-space>
-      </template>
-
-      <!-- 有更新 -->
-      <template v-else-if="updateInfo?.hasUpdate">
-        <n-space vertical :size="10">
-          <n-text>
-            发现新版本 <strong>v{{ updateInfo.version }}</strong>（当前 v{{ updateInfo.currentVersion }}）
-          </n-text>
-          <n-text v-if="updateInfo.date" depth="3">发布日期：{{ updateInfo.date }}</n-text>
-          <div v-if="updateInfo.body" class="update-body">
-            <n-text depth="3">{{ updateInfo.body }}</n-text>
-          </div>
-        </n-space>
-      </template>
-
-      <!-- 无更新 -->
-      <template v-else-if="updateInfo">
-        <div style="text-align:center;padding:12px 0">
-          <Rocket :size="32" style="color:var(--brand);margin-bottom:8px" />
-          <n-text>当前已是最新版本</n-text>
-        </div>
-      </template>
-
-      <!-- 检查中 -->
-      <template v-else>
-        <n-text depth="3">正在检查更新...</n-text>
-      </template>
-    </n-spin>
-
-    <template #footer>
-      <n-space justify="end">
-        <template v-if="installingUpdate">
-          <n-button @click="showUpdateModal = false">后台下载</n-button>
-        </template>
-        <template v-else>
-          <n-button @click="showUpdateModal = false">关闭</n-button>
-          <n-button v-if="updateInfo?.hasUpdate" type="primary" @click="handleUpdateDownload">
-            下载并安装
-          </n-button>
-        </template>
-      </n-space>
-    </template>
-  </n-modal>
 </template>
-
 <style scoped>
 /* ---- 弹窗统一外观 ---- */
 :deep(.nova-modal) {
@@ -252,18 +154,4 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
   background: var(--brand-soft);
 }
 
-.version-text {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-family: "SFMono-Regular", Consolas, monospace;
-}
-
-.update-body {
-  max-height: 120px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  padding: 8px;
-  border-radius: 5px;
-  background: var(--bg-input);
-}
 </style>

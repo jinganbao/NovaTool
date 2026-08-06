@@ -1,4 +1,5 @@
 mod formatters;
+mod menu;
 mod port_check;
 mod tcp_client;
 mod tcp_server;
@@ -48,8 +49,17 @@ pub fn run() {
             formatters::json_format,
             formatters::xml_format,
             port_check::list_ports,
-            port_check::kill_process
+            port_check::kill_process,
+            menu::open_url
         ])
+        .setup(|app| {
+            // 系统菜单栏（全中文）
+            menu::build_menu(app.handle())?;
+            app.on_menu_event(move |app, event| {
+                menu::handle_menu_event(app, event.id().as_ref());
+            });
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("error while building NovaTool");
 

@@ -7,6 +7,7 @@ export function useAppUpdate(
   const checkingUpdate = ref(false);
   const showUpdateModal = ref(false);
   const updateInfo = ref<UpdateResult | null>(null);
+  const updateError = ref("");
   const installingUpdate = ref(false);
   const updateDownloaded = ref(0);
   const updateTotal = ref(0);
@@ -20,19 +21,18 @@ export function useAppUpdate(
   });
 
   async function checkForUpdates(options?: { silent?: boolean }) {
+    updateError.value = "";
     checkingUpdate.value = true;
+    // 点击即弹窗：立即给出检查进度反馈，等待结果返回后切换内容
+    if (!options?.silent) {
+      showUpdateModal.value = true;
+    }
     try {
       const result = await checkAppUpdate();
       updateInfo.value = result;
-      if (!result.hasUpdate) {
-        if (options?.silent) return;
-        showUpdateModal.value = true;
-        return;
-      }
-      showUpdateModal.value = true;
     } catch (e: unknown) {
       if (!options?.silent) {
-        message.error("检查更新失败: " + ((e as Error)?.message ?? String(e)));
+        updateError.value = (e as Error)?.message ?? String(e);
       }
     } finally {
       checkingUpdate.value = false;
@@ -68,6 +68,7 @@ export function useAppUpdate(
     checkingUpdate,
     showUpdateModal,
     updateInfo,
+    updateError,
     installingUpdate,
     updateDownloaded,
     updateTotal,

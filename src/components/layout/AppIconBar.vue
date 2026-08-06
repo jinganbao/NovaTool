@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Hammer, Settings } from "lucide-vue-next";
+import { Hammer } from "lucide-vue-next";
 import { NTooltip } from "naive-ui";
 import { toolGroups } from "@/config/tools";
 import type { ToolKey } from "@/types/tools";
@@ -8,7 +8,6 @@ import { ref } from "vue";
 defineProps<{ activeTool: ToolKey }>();
 const emit = defineEmits<{
   "update:active-tool": [key: ToolKey];
-  settings: [];
 }>();
 
 // macOS Overlay 标题栏：红绿灯覆盖图标栏顶部
@@ -52,23 +51,6 @@ const isMac = ref(typeof navigator !== "undefined" && /Mac/i.test(navigator.user
         </n-tooltip>
       </template>
     </nav>
-
-    <!-- 底部设置 -->
-    <div class="icon-footer">
-      <n-tooltip placement="right" :show-arrow="false">
-        <template #trigger>
-          <button
-            class="icon-btn"
-            aria-label="配置"
-            type="button"
-            @click="emit('settings')"
-          >
-            <Settings :size="18" stroke-width="2" />
-          </button>
-        </template>
-        <span class="tooltip-label">配置</span>
-      </n-tooltip>
-    </div>
   </aside>
 </template>
 
@@ -184,18 +166,6 @@ const isMac = ref(typeof navigator !== "undefined" && /Mac/i.test(navigator.user
   border-radius: 50%;
   background: var(--warning);
   border: 1px solid var(--bg-sider);
-}
-
-/* ---- 底部 ---- */
-.icon-footer {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
-  width: 100%;
 }
 
 /* ---- tooltip ---- */

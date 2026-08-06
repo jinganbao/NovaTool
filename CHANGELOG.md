@@ -2,31 +2,49 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.0.7] - 2026-08-06
+
+### 新增
+
+- **系统菜单栏**（全中文）：应用菜单（关于 / 检查更新 / 隐藏 / 退出 Cmd+Q）、编辑、视图、窗口、帮助（使用文档 / 项目主页 / 报告问题 / 开源许可证）
+- **关于弹窗**：应用信息、版本号、项目主页与开源许可证链接
+- **更新弹窗即时反馈**：点击「检查更新」立即弹出并显示检查进度，失败时展示错误与重试按钮
+- **启动静默自动检查更新**（此前开关从未生效）
+- **端口检查器**：5 秒自动刷新与刷新时间显示
+
+### 变更
+
+- 更新机制统一为单实例：系统菜单 / 设置弹窗按钮 / 启动自动检查共用同一逻辑与弹窗
+- 设置弹窗移除「版本更新」区块（入口统一走系统菜单）
+- 设置入口收敛为顶部标题栏一处（移除侧边栏重复按钮与无效事件监听）
 
 ### 修复
 
 - **进制转换**：修复源进制为二/八/十六进制时输入全部解析失败的问题（前缀拼接错误）
-- **正则测试**：正则计算移至 Web Worker，2s 超时可强制中止灾难性回溯；增加 150ms 防抖、1MB 输入上限、5000 条结果上限，修复旧请求超时覆盖新状态与清空后旧结果回写的竞态
+- **正则测试**：正则计算移至 Web Worker，2s 超时可强制中止灾难性回溯；增加防抖、输入与结果上限，修复请求竞态
 - **文本比较**：字符级 diff 从前端 O(n·m) LCS 迁移到 Rust（similar 算法），修复 changed 行配对错位与中文/emoji 高亮偏移错误
-- **JSON/XML 格式化**：迁移到 Rust 端执行（serde_json / quick-xml），不再阻塞主线程；XML 修复 CDATA/注释/DOCTYPE 被破坏的问题，压缩路径补上错误处理
+- **JSON/XML 格式化**：迁移到 Rust 端执行（serde_json / quick-xml），不再阻塞主线程；XML 修复 CDATA/注释/DOCTYPE 被破坏的问题
 - **Cron 工具**：修复 `0 9 * * 7`（7=周日）永远无匹配、计算首分钟被排除的问题
+- **UUID v7**：按 RFC 9562 修正（此前生成 33-hex 的非法 UUID）
+- **密码生成器**：拒绝采样消除模偏差、每类字符集至少出现一个
 - **二维码生成**：移除 `v-html` 渲染（XSS 风险面），改为 data URL 图片渲染
 
 ### 安全
 
-- **端口检查**：`kill_process` 增加 PID 校验，拒绝 0（进程组信号）/1（init）/应用自身/系统进程；SIGTERM 失败后复查进程状态再决定是否 SIGKILL
-- **TCP 调试**：短连接响应 16MB 截断（新增截断提示）、长连接池 32 上限、HEX 输入 1MB 上限、服务端单次发送 1MB 上限
+- **端口检查**：`kill_process` 增加 PID 校验，拒绝 0（进程组信号）/1（init）/应用自身/系统进程
+- **TCP 调试**：短连接响应 16MB 截断、长连接池 32 上限、HEX 输入 1MB 上限、服务端单次发送 1MB 上限
+- **TCP 服务器**：默认绑定 127.0.0.1（仅本机），局域网访问需显式开启；bounded channel 防内存堆积；支持 HEX 发送
 - **文本比较**：输入单侧 1MB 上限，防止 O(n²) diff 卡死
 
 ### 工程化
 
-- 新增前端测试基座（vitest + happy-dom），覆盖 cron/storage 共 18 个用例；Rust 端 34 个单元测试（diff 标记、JSON/XML 格式化、端口解析、HEX 编解码）
-- 新增 ESLint（零错误）、Prettier、rustfmt、Clippy（`-D warnings` 零警告）与对应 scripts
-- 新增 PR 门禁 CI（`.github/workflows/ci.yml`）：前端 lint/typecheck/test/build + 后端 fmt/clippy/test
-- `scripts/release.sh` 恢复版本控制，修复 Cargo.lock 不同步问题，增加工作区脏检查与真实仓库地址输出
-- 新增 LICENSE（MIT）与 CHANGELOG
-- 删除零引用的占位组件 PlaceholderTool.vue
+- 前端 vitest 测试基座 33 个用例；Rust 端 39 个单元测试
+- ESLint（零错误）、Prettier、rustfmt、Clippy（`-D warnings` 零警告）与对应 scripts
+- PR 门禁 CI（lint/typecheck/test/build + fmt/clippy/test）
+- 错误监控：日志插件（stdout + 日志文件）与前端全局错误钩子
+- `scripts/release.sh` 恢复版本控制，修复 Cargo.lock 不同步
+- 新增 LICENSE、CHANGELOG，README 修正；命令面板无障碍（焦点圈定 / aria-modal）
+- 删除零引用占位组件与死代码
 
 ## [1.0.6] - 2026-08-05
 
