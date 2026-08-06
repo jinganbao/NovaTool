@@ -11,6 +11,31 @@ pub struct PortEntry {
     protocol: String,
 }
 
+/// 解析 lsof 输出行（macOS/Linux）
+/// 格式: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
+/// 示例: node    12345 user   15u  IPv4 0x1234      0t0  TCP *:3000 (LISTEN)
+fn parse_lsof_line(line: &str) -> Option<PortEntry> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 9 {
+        return None;
+    }
+
+    let process_name = parts[0].to_string();
+    let pid: u32 = parts[1].parse().ok()?;
+
+    // NAME 列格式: TCP *:3000 (LISTEN) 或 TCP 127.0.0.1:3000 (LISTEN)
+    let addr_part = parts[8];
+    let port_str = addr_part.rfind(':').map(|pos| &addr_part[pos + 1..])?;
+    let port: u16 = port_str.parse().ok()?;
+
+    Some(PortEntry {
+        port,
+        pid,
+        process_name,
+        protocol: "TCP".into(),
+    })
+}
+
 /// 列出所有监听端口（macOS/Linux 用 lsof）
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
@@ -28,43 +53,67 @@ pub fn list_ports() -> Result<Vec<PortEntry>, String> {
     let mut entries: Vec<PortEntry> = Vec::new();
 
     for line in stdout.lines().skip(1) {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 9 {
-            continue;
-        }
-
-        let process_name = parts[0].to_string();
-        let pid: u32 = parts[1]
-            .parse()
-            .map_err(|_| format!("解析 PID 失败: {}", parts[1]))?;
-
-        // NAME 列格式: TCP *:3000 (LISTEN) 或 TCP 127.0.0.1:3000 (LISTEN)
-        let addr_part = parts[8];
-        let port_str = if let Some(pos) = addr_part.rfind(':') {
-            &addr_part[pos + 1..]
-        } else {
+        let Some(entry) = parse_lsof_line(line) else {
             continue;
         };
 
-        let port: u16 = port_str
-            .parse()
-            .map_err(|_| format!("解析端口失败: {}", port_str))?;
-
         // 去重：同一个端口可能有多行（IPv4/IPv6）
-        if entries.iter().any(|e| e.port == port && e.pid == pid) {
+        if entries
+            .iter()
+            .any(|e| e.port == entry.port && e.pid == entry.pid)
+        {
             continue;
         }
-
-        entries.push(PortEntry {
-            port,
-            pid,
-            process_name,
-            protocol: "TCP".into(),
-        });
+        entries.push(entry);
     }
 
     entries.sort_by_key(|e| e.port);
     Ok(entries)
+}
+
+/// 解析 netstat 输出行（Windows）
+/// 格式: TCP 0.0.0.0:135 0.0.0.0:0 LISTENING 1234
+#[cfg(any(target_os = "windows", test))]
+fn parse_netstat_line(
+    line: &str,
+    pid_to_name: &std::collections::HashMap<u32, String>,
+) -> Option<PortEntry> {
+    let trimmed = line.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with("活动")
+        || trimmed.starts_with("Active")
+        || trimmed.starts_with("协议")
+        || trimmed.starts_with("Proto")
+    {
+        return None;
+    }
+
+    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+    if parts.len() < 5 {
+        return None;
+    }
+
+    let local_addr = parts[1];
+    let state = parts[3];
+    if state != "LISTENING" {
+        return None;
+    }
+
+    let port_str = local_addr.rfind(':').map(|pos| &local_addr[pos + 1..])?;
+    let port: u16 = port_str.parse().ok()?;
+    let pid: u32 = parts[4].parse().ok()?;
+
+    let process_name = pid_to_name
+        .get(&pid)
+        .cloned()
+        .unwrap_or_else(|| format!("PID-{}", pid));
+
+    Some(PortEntry {
+        port,
+        pid,
+        process_name,
+        protocol: "TCP".into(),
+    })
 }
 
 /// 列出所有监听端口（Windows 用 netstat + tasklist）
@@ -104,58 +153,18 @@ pub fn list_ports() -> Result<Vec<PortEntry>, String> {
     let mut entries: Vec<PortEntry> = Vec::new();
 
     for line in stdout.lines() {
-        // 跳过空行和表头
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("活动") || trimmed.starts_with("Active")
-            || trimmed.starts_with("协议") || trimmed.starts_with("Proto")
-        {
+        let Some(entry) = parse_netstat_line(line, &pid_to_name) else {
             continue;
-        }
-
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() < 5 {
-            continue;
-        }
-
-        // 格式: TCP 0.0.0.0:135 0.0.0.0:0 LISTENING 1234
-        let local_addr = parts[1];
-        let state = parts[3];
-        if state != "LISTENING" {
-            continue;
-        }
-
-        let port_str = if let Some(pos) = local_addr.rfind(':') {
-            &local_addr[pos + 1..]
-        } else {
-            continue;
-        };
-
-        let port: u16 = match port_str.parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        let pid: u32 = match parts[4].parse() {
-            Ok(p) => p,
-            Err(_) => continue,
         };
 
         // 去重
-        if entries.iter().any(|e| e.port == port && e.pid == pid) {
+        if entries
+            .iter()
+            .any(|e| e.port == entry.port && e.pid == entry.pid)
+        {
             continue;
         }
-
-        let process_name = pid_to_name
-            .get(&pid)
-            .cloned()
-            .unwrap_or_else(|| format!("PID-{}", pid));
-
-        entries.push(PortEntry {
-            port,
-            pid,
-            process_name,
-            protocol: "TCP".into(),
-        });
+        entries.push(entry);
     }
 
     entries.sort_by_key(|e| e.port);
@@ -166,13 +175,46 @@ pub fn list_ports() -> Result<Vec<PortEntry>, String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 pub fn kill_process(pid: u32) -> Result<(), String> {
+    // 安全校验：拒绝危险 PID（POSIX 语义下 kill -0/15/9 对 0 号 PID 会作用于整个进程组）
+    if pid == 0 {
+        return Err("拒绝终止 PID 0（会向整个进程组发信号，可能导致应用自身退出）".into());
+    }
+    if pid == 1 {
+        return Err("拒绝终止 PID 1（系统 init 进程）".into());
+    }
+    if pid == std::process::id() {
+        return Err("拒绝终止应用自身".into());
+    }
+    if pid < 100 {
+        return Err(format!("拒绝终止 PID {}（系统进程）", pid));
+    }
+
+    // kill -0 不发送信号，仅检查进程是否存在
+    let alive = std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .map_err(|e| format!("执行 kill 失败: {}", e))?
+        .status
+        .success();
+    if !alive {
+        return Err(format!("进程 {} 不存在", pid));
+    }
+
     let term_output = std::process::Command::new("kill")
         .args(["-15", &pid.to_string()])
         .output()
         .map_err(|e| format!("执行 kill 失败: {}", e))?;
 
     if !term_output.status.success() {
-        // SIGTERM 失败，直接尝试 SIGKILL
+        // SIGTERM 失败（可能权限不足或进程恰好退出）：先复查进程状态再决定是否 SIGKILL
+        let still_alive = std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !still_alive {
+            return Ok(());
+        }
         let kill_output = std::process::Command::new("kill")
             .args(["-9", &pid.to_string()])
             .output()
@@ -208,6 +250,20 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn kill_process(pid: u32) -> Result<(), String> {
+    // 安全校验：拒绝危险 PID（System Idle Process=0、System=4）
+    if pid == 0 {
+        return Err("拒绝终止 PID 0（System Idle Process）".into());
+    }
+    if pid == 4 {
+        return Err("拒绝终止 PID 4（System 进程）".into());
+    }
+    if pid == std::process::id() {
+        return Err("拒绝终止应用自身".into());
+    }
+    if pid < 100 {
+        return Err(format!("拒绝终止 PID {}（系统进程）", pid));
+    }
+
     let output = std::process::Command::new("taskkill")
         .args(["/PID", &pid.to_string(), "/F"])
         .output()
@@ -218,4 +274,73 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
         return Err(format!("终止进程 {} 失败: {}", pid, stderr.trim()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_lsof_line_normal() {
+        let entry =
+            parse_lsof_line("node    12345 user   15u  IPv4 0x1234      0t0  TCP *:3000 (LISTEN)")
+                .unwrap();
+        assert_eq!(entry.port, 3000);
+        assert_eq!(entry.pid, 12345);
+        assert_eq!(entry.process_name, "node");
+        assert_eq!(entry.protocol, "TCP");
+    }
+
+    #[test]
+    fn test_parse_lsof_line_localhost() {
+        let entry = parse_lsof_line(
+            "python3 9999  user   5u  IPv6 0x5678      0t0  TCP 127.0.0.1:8080 (LISTEN)",
+        )
+        .unwrap();
+        assert_eq!(entry.port, 8080);
+        assert_eq!(entry.pid, 9999);
+    }
+
+    #[test]
+    fn test_parse_lsof_line_invalid() {
+        // 列数不足 / PID 非数字 / 端口非数字
+        assert!(parse_lsof_line("node 12345 user").is_none());
+        assert!(parse_lsof_line("node abc user 15u IPv4 0x1 0t0 TCP *:3000 (LISTEN)").is_none());
+        assert!(parse_lsof_line("node 12345 user 15u IPv4 0x1 0t0 TCP *:abc (LISTEN)").is_none());
+        // 无端口部分（NAME 列没有冒号）
+        assert!(parse_lsof_line("node 12345 user 15u IPv4 0x1 0t0 TCP (LISTEN)").is_none());
+    }
+
+    #[test]
+    fn test_parse_netstat_line_normal() {
+        let mut map = std::collections::HashMap::new();
+        map.insert(1234u32, "svchost.exe".to_string());
+        let entry = parse_netstat_line(
+            "  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1234",
+            &map,
+        )
+        .unwrap();
+        assert_eq!(entry.port, 135);
+        assert_eq!(entry.pid, 1234);
+        assert_eq!(entry.process_name, "svchost.exe");
+    }
+
+    #[test]
+    fn test_parse_netstat_line_no_name_fallback() {
+        let map = std::collections::HashMap::new();
+        let entry =
+            parse_netstat_line("TCP 127.0.0.1:5432 0.0.0.0:0 LISTENING 4242", &map).unwrap();
+        assert_eq!(entry.port, 5432);
+        assert_eq!(entry.process_name, "PID-4242");
+    }
+
+    #[test]
+    fn test_parse_netstat_line_skips() {
+        let map = std::collections::HashMap::new();
+        // 表头 / 非 LISTENING / 列数不足
+        assert!(parse_netstat_line("  活动连接", &map).is_none());
+        assert!(parse_netstat_line("  Proto  Local Address", &map).is_none());
+        assert!(parse_netstat_line("TCP 0.0.0.0:80 0.0.0.0:0 ESTABLISHED 1", &map).is_none());
+        assert!(parse_netstat_line("TCP 0.0.0.0:80", &map).is_none());
+    }
 }

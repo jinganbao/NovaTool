@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
-import { NButton, NInput, NSelect, NSpace, useMessage } from "naive-ui";
+import { NButton, NInput, NSelect, useMessage } from "naive-ui";
 import { Copy, RefreshCw } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";

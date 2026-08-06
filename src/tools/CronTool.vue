@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { NButton, NInput, NSpace, NTag, useMessage } from "naive-ui";
+import { NButton, NInput, useMessage } from "naive-ui";
 import { Clock, Copy, RefreshCw } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import { parseCron, nextRuns, describeCron, FIELD_DOCS, PRESETS } from "@/utils/cron";

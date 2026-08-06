@@ -6,7 +6,6 @@ import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 类型 ---- */
-type Radix = 2 | 8 | 10 | 16;
 interface RadixDef {
   value: number;
   label: string;
@@ -64,7 +63,7 @@ const results = computed<ConversionLine[]>(() => {
       if (sourceBase.value === 10) {
         value = BigInt(numStr);
       } else {
-        value = BigInt(`0${srcDef.prefix}${numStr}`);
+        value = BigInt(`${srcDef.prefix}${numStr}`);
       }
       value *= sign;
     } catch {

@@ -96,7 +96,7 @@ const lineDecoField = StateField.define<DecorationSet>({
 function buildLineDecorations(decos: LineDecoration[]): DecorationSet {
   const state = editorView.value?.state;
   if (!state) return Decoration.none;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const marks: any[] = [];
   const doc = state.doc;
   for (const d of decos) {
@@ -140,7 +140,7 @@ const inlineDecoField = StateField.define<DecorationSet>({
 function buildInlineDecorations(marks: InlineMark[]): DecorationSet {
   const state = editorView.value?.state;
   if (!state) return Decoration.none;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const result: any[] = [];
   const doc = state.doc;
   for (const mark of marks) {
@@ -204,7 +204,7 @@ const extensions = computed(() => {
       :placeholder="placeholder"
       :disabled="readonly"
       class="cm-host"
-      @update:modelValue="onUpdate"
+      @update:model-value="onUpdate"
       @ready="onReady"
     />
   </div>

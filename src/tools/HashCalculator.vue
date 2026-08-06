@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { NButton, NSpace, useMessage } from "naive-ui";
+import { NButton, useMessage } from "naive-ui";
 import { Copy, Eraser, Hash } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import CodeEditor from "@/components/editor/CodeEditor.vue";

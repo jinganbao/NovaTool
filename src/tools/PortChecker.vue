@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { NButton, NInput, NSpace, NTag, NPopconfirm, useMessage } from "naive-ui";
 import { Copy, RefreshCw, Search, Skull, Wifi } from "lucide-vue-next";
@@ -21,6 +21,21 @@ const { copyText } = useClipboard(message);
 const entries = ref<PortEntry[]>([]);
 const loading = ref(false);
 const searchQuery = ref("");
+const autoRefresh = ref(false);
+const lastRefreshAt = ref("");
+let refreshTimer: number | undefined;
+
+/* ---- 自动刷新：5 秒轮询 ---- */
+function toggleAutoRefresh(enabled: boolean) {
+  window.clearInterval(refreshTimer);
+  if (enabled) {
+    refreshTimer = window.setInterval(() => void refresh(true), 5000);
+  }
+}
+
+onBeforeUnmount(() => {
+  window.clearInterval(refreshTimer);
+});
 
 /* ---- 计算 ---- */
 const filtered = computed(() => {
@@ -35,14 +50,17 @@ const filtered = computed(() => {
 });
 
 /* ---- 工具 ---- */
-async function refresh() {
-  loading.value = true;
+async function refresh(silent = false) {
+  if (!silent) loading.value = true;
   try {
     entries.value = await invoke<PortEntry[]>("list_ports");
+    lastRefreshAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
   } catch (err) {
-    message.error("获取端口列表失败：" + (err instanceof Error ? err.message : String(err)));
+    if (!silent) {
+      message.error("获取端口列表失败：" + (err instanceof Error ? err.message : String(err)));
+    }
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 
@@ -79,10 +97,15 @@ refresh();
           <Search :size="14" />
         </template>
       </n-input>
-      <n-space :size="6">
-        <n-button size="small" type="primary" :loading="loading" :render-icon="() => renderIcon(RefreshCw)" @click="refresh"
+      <n-space :size="6" align="center">
+        <n-button size="small" type="primary" :loading="loading" :render-icon="() => renderIcon(RefreshCw)" @click="refresh()"
           >刷新</n-button
         >
+        <span class="auto-refresh">
+          <n-switch v-model:value="autoRefresh" size="small" @update:value="toggleAutoRefresh" />
+          <span class="auto-refresh-label">自动刷新(5s)</span>
+        </span>
+        <span v-if="lastRefreshAt" class="refresh-time">更新于 {{ lastRefreshAt }}</span>
       </n-space>
     </div>
 
@@ -153,6 +176,22 @@ refresh();
 .search-input {
   flex: 1;
   min-width: 0;
+}
+
+.auto-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.auto-refresh-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.refresh-time {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 /* ---- 表格 ---- */

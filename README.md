@@ -90,7 +90,12 @@ pnpm dev
 # 4. 在 Tauri 桌面窗口中启动完整应用
 pnpm tauri:dev
 
-# 5. 构建生产版本（安装包输出到 src-tauri/target/release/bundle/）
+# 5. 运行测试与质量检查
+pnpm test        # 前端单元测试（vitest）
+pnpm lint        # ESLint 检查
+cd src-tauri && cargo test && cargo clippy -- -D warnings
+
+# 6. 构建生产版本（安装包输出到 src-tauri/target/release/bundle/）
 pnpm tauri:build
 ```
 
@@ -102,18 +107,23 @@ NovaTool/
 │   ├── components/
 │   │   ├── editor/             # CodeMirror 编辑器封装
 │   │   ├── layout/             # 布局组件（侧边栏、工作区、设置）
-│   │   └── tools/              # 16 个工具组件
+│   │   └── ...
+│   ├── tools/                  # 16 个工具组件
 │   ├── composables/            # 组合式函数（配置、剪贴板、更新）
 │   ├── config/                 # 工具定义、主题配置
 │   ├── types/                  # TypeScript 类型定义
-│   └── utils/                  # 工具函数（哈希、格式化、cron 解析）
+│   └── utils/                  # 工具函数（哈希、cron 解析、正则 Worker）
 ├── src-tauri/                  # Tauri / Rust 后端
 │   ├── src/
-│   │   └── lib.rs              # Tauri 命令（TCP、文本差异、端口管理）
+│   │   ├── lib.rs              # Tauri 命令注册（TCP、端口管理）
+│   │   ├── formatters.rs       # JSON/XML 格式化命令
+│   │   ├── text_diff.rs        # 行级/字符级差异计算
+│   │   ├── port_check.rs       # 端口列表与进程管理
+│   │   └── ...                 # 各模块自带单元测试
 │   ├── Cargo.toml              # Rust 依赖
 │   ├── tauri.conf.json         # Tauri 配置
 │   └── capabilities/           # Tauri v2 权限声明
-├── .github/workflows/          # CI/CD（跨平台构建发布）
+├── .github/workflows/          # CI/CD（质量门禁 + 跨平台构建发布）
 ├── package.json                # 项目脚本与依赖
 ├── vite.config.ts              # Vite 构建配置
 └── index.html                  # 入口 HTML

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from "vue";
+import { nextTick, onBeforeUnmount, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useClipboard } from "@/composables/useClipboard";
 import { NButton, NInput, NSelect, NSpace, NTag, useMessage } from "naive-ui";
 import {
   Copy,
@@ -13,11 +14,10 @@ import {
   X,
 } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
-import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 类型 ---- */
 type ServerEvent = {
-  type: "info" | "connect" | "data" | "disconnect" | "error";
+  type: "info" | "connect" | "data" | "disconnect" | "error" | "server-send";
   clientId: string;
   addr: string;
   message: string;
@@ -37,6 +37,7 @@ const message = useMessage();
 const { copyText } = useClipboard(message);
 
 const port = ref("9000");
+const lanEnabled = ref(false);
 const running = ref(false);
 const starting = ref(false);
 const stopping = ref(false);
@@ -50,7 +51,7 @@ let unlisten: UnlistenFn | null = null;
 /* ---- 生命周期 ---- */
 async function setupListener() {
   unlisten = await listen<ServerEvent>("tcp-server-event", (event) => {
-    const { type, clientId, addr, message: msg, text, hex, bytes } = event.payload;
+    const { type, clientId, addr, message: msg, text, hex } = event.payload;
     const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
 
     switch (type) {
@@ -70,6 +71,11 @@ async function setupListener() {
       case "data": {
         const body = displayMode.value === "hex" && hex ? hex : (text ?? msg);
         appendLog(time, "DATA", `[${clientId}]`, "data", body);
+        break;
+      }
+      case "server-send": {
+        const body = displayMode.value === "hex" && hex ? hex : (text ?? msg);
+        appendLog(time, "SEND", `[${clientId}] ${msg}`, "send", body);
         break;
       }
       case "disconnect":
@@ -125,7 +131,8 @@ async function startServer() {
   }
   starting.value = true;
   try {
-    await invoke("tcp_server_start", { port: portNum });
+    await invoke("tcp_server_start", { port: portNum, lan: lanEnabled.value });
+    message.success(lanEnabled.value ? `已启动，监听 0.0.0.0:${portNum}（局域网可访问）` : `已启动，监听 127.0.0.1:${portNum}`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : String(error));
   } finally {
@@ -151,6 +158,7 @@ function clearLog() {
 
 /* ---- 主动发送 / 断开客户端 ---- */
 const serverSendText = ref("");
+const sendMode = ref<"text" | "hex">("text");
 const selectedSendClient = ref<string | null>(null);
 
 async function sendToClient() {
@@ -161,7 +169,7 @@ async function sendToClient() {
     return;
   }
   try {
-    await invoke("tcp_server_send", { clientId: cid, data });
+    await invoke("tcp_server_send", { clientId: cid, data, mode: sendMode.value });
     serverSendText.value = "";
     message.success("发送成功");
   } catch (error) {
@@ -193,6 +201,11 @@ async function disconnectClient(clientId: string) {
             :disabled="running"
             @keyup.enter="startServer"
           />
+        </label>
+        <label class="field field-auto">
+          <span class="field-label">允许局域网连接</span>
+          <n-switch v-model:value="lanEnabled" size="small" :disabled="running" />
+          <span class="field-hint">{{ lanEnabled ? "绑定 0.0.0.0，局域网可访问" : "仅本机可访问（默认）" }}</span>
         </label>
       </div>
       <div class="conn-actions">
@@ -262,9 +275,18 @@ async function disconnectClient(clientId: string) {
       <n-input
         v-model:value="serverSendText"
         size="small"
-        placeholder="输入发送内容..."
+        :placeholder="sendMode === 'hex' ? 'HEX 内容，如 48 65 6C 6C 6F' : '输入发送内容...'"
         @keyup.enter="sendToClient"
         class="send-text-input"
+      />
+      <n-select
+        v-model:value="sendMode"
+        size="small"
+        :options="[
+          { label: '文本', value: 'text' },
+          { label: 'HEX', value: 'hex' },
+        ]"
+        class="send-mode"
       />
       <n-button
         size="tiny"
@@ -360,6 +382,21 @@ async function disconnectClient(clientId: string) {
 .field-tight {
   flex: 0.8 1 120px;
   min-width: 120px;
+}
+
+.field-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.field-auto {
+  flex: 1 1 200px;
+  min-width: 200px;
+  grid-auto-flow: column;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-items: start;
 }
 
 .field-label {
@@ -473,6 +510,11 @@ async function disconnectClient(clientId: string) {
 
 .send-client-select {
   width: 200px;
+  flex-shrink: 0;
+}
+
+.send-mode {
+  width: 80px;
   flex-shrink: 0;
 }
 

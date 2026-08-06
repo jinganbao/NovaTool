@@ -40,7 +40,7 @@ function decode() {
     }
     output.value = new TextDecoder("utf-8").decode(bytes);
     message.success("Base64 解码完成");
-  } catch (err) {
+  } catch {
     output.value = "";
     message.error("解码失败，请检查输入是否为合法 Base64 字符串");
   }

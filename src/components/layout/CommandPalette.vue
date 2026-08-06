@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Search, Star, Clock, CornerDownLeft } from "lucide-vue-next";
+import { Search, CornerDownLeft } from "lucide-vue-next";
 import { allTools } from "@/config/tools";
 import type { ToolKey } from "@/types/tools";
 import { useToolHistory } from "@/composables/useToolHistory";
-import { renderIcon } from "@/utils/render";
 
 const emit = defineEmits<{
   (e: "select", key: ToolKey): void;
@@ -15,7 +14,10 @@ const { recent, favorites, recordUse } = useToolHistory();
 const open = defineModel<boolean>("open", { required: true });
 const query = ref("");
 const inputRef = ref<HTMLInputElement | null>(null);
+const dialogRef = ref<HTMLElement | null>(null);
 const activeIndex = ref(0);
+// 打开前焦点元素：关闭时归还，保证键盘导航不被打断
+let lastFocused: HTMLElement | null = null;
 
 const results = computed(() => {
   const q = query.value.trim().toLowerCase();
@@ -76,13 +78,45 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function onOpen() {
+  lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   query.value = "";
   activeIndex.value = 0;
   nextTick(() => inputRef.value?.focus());
 }
 
+function onClose() {
+  // 归还焦点到打开前的位置
+  nextTick(() => {
+    lastFocused?.focus();
+    lastFocused = null;
+  });
+}
+
+/* ---- 焦点圈定：Tab 循环在对话框内，防止焦点逃逸到背景 ---- */
+function trapFocus(e: KeyboardEvent) {
+  if (e.key !== "Tab") return;
+  const focusables = dialogRef.value?.querySelectorAll<HTMLElement>(
+    'button, input, [href], [tabindex]:not([tabindex="-1"])',
+  );
+  if (!focusables || focusables.length === 0) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  if (active && !dialogRef.value?.contains(active)) {
+    e.preventDefault();
+    first.focus();
+  } else if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 watch(open, (v) => {
   if (v) onOpen();
+  else onClose();
 });
 
 /* ---- 全局快捷键 Ctrl+K / Ctrl+P ---- */
@@ -110,7 +144,15 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
 
 <template>
   <div v-if="open" class="palette-overlay" @click="open = false">
-    <div class="palette-dialog" @click.stop>
+    <div
+      ref="dialogRef"
+      class="palette-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label="工具命令面板"
+      @click.stop
+      @keydown="trapFocus"
+    >
       <div class="palette-accent" />
       <div class="palette-search">
         <Search :size="15" class="search-icon" />

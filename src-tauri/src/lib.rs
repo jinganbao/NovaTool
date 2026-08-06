@@ -1,3 +1,4 @@
+mod formatters;
 mod port_check;
 mod tcp_client;
 mod tcp_server;
@@ -19,6 +20,18 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(
+            // 日志插件：stdout + 应用日志目录落盘，供排障使用
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("NovaTool".into()),
+                    }),
+                ])
+                .build(),
+        )
         .manage(tcp_server::ServerState::default())
         .manage(tcp_client::TcpPool::default())
         .invoke_handler(tauri::generate_handler![
@@ -32,6 +45,8 @@ pub fn run() {
             tcp_server::tcp_server_send,
             tcp_server::tcp_server_disconnect_client,
             text_diff::text_diff,
+            formatters::json_format,
+            formatters::xml_format,
             port_check::list_ports,
             port_check::kill_process
         ])
@@ -48,10 +63,7 @@ pub fn run() {
 /// macOS 生命周期：点击关闭按钮只隐藏窗口、驻留 Dock；Cmd+Q / 右键退出才真正退出。
 /// 点击 Dock 图标时重新显示窗口。
 #[cfg(target_os = "macos")]
-fn handle_macos_dock_lifecycle(
-    app_handle: &tauri::AppHandle,
-    event: tauri::RunEvent,
-) {
+fn handle_macos_dock_lifecycle(app_handle: &tauri::AppHandle, event: tauri::RunEvent) {
     // 应用是否处于退出流程（Cmd+Q / 系统退出）：此时允许窗口真正关闭
     static QUITTING: AtomicBool = AtomicBool::new(false);
 
@@ -60,7 +72,10 @@ fn handle_macos_dock_lifecycle(
             QUITTING.store(true, Ordering::SeqCst);
         }
         // 点击 Dock 图标：重新显示主窗口
-        tauri::RunEvent::Reopen { has_visible_windows, .. } => {
+        tauri::RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => {
             if !has_visible_windows {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.show();
@@ -70,6 +85,8 @@ fn handle_macos_dock_lifecycle(
             }
         }
         // 关闭请求：非退出流程时拦截并隐藏（驻留 Dock）
+        // 保持 MSRV 1.77，不采用 clippy 建议的 let-chain/match-guard 写法
+        #[allow(clippy::collapsible_match)]
         tauri::RunEvent::WindowEvent {
             label,
             event: tauri::WindowEvent::CloseRequested { api, .. },
@@ -77,9 +94,10 @@ fn handle_macos_dock_lifecycle(
         } => {
             if label == "main" && !QUITTING.load(Ordering::SeqCst) {
                 api.prevent_close();
-                if let Some(window) = app_handle.get_webview_window("main") {
+                // map 代替嵌套 if-let，避免 clippy::collapsible_if（保持 MSRV 1.77）
+                let _ = app_handle.get_webview_window("main").map(|window| {
                     let _ = window.hide();
-                }
+                });
             }
         }
         _ => {}

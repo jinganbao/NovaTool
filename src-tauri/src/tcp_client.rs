@@ -15,6 +15,7 @@ pub struct TcpSendResult {
     received_hex: String,
     bytes_sent: usize,
     bytes_received: usize,
+    truncated: bool,
 }
 
 fn make_conn_id() -> String {
@@ -39,6 +40,11 @@ impl Default for TcpPool {
         }
     }
 }
+
+/// 单次接收上限（16MB），防止对端持续灌数据撑爆内存
+const MAX_RECEIVE_BYTES: usize = 16 * 1024 * 1024;
+/// 长连接池上限，防止无限创建连接/线程耗尽 fd
+const MAX_POOL_CONNECTIONS: usize = 32;
 
 /// 短连接请求-响应模式：发送后 shutdown write，等待响应或超时
 #[tauri::command]
@@ -72,10 +78,19 @@ pub fn tcp_send(
 
     let mut received = Vec::new();
     let mut chunk = [0_u8; 4096];
+    let mut truncated = false;
     loop {
         match stream.read(&mut chunk) {
             Ok(0) => break,
-            Ok(size) => received.extend_from_slice(&chunk[..size]),
+            Ok(size) => {
+                if received.len() + size > MAX_RECEIVE_BYTES {
+                    let remaining = MAX_RECEIVE_BYTES - received.len();
+                    received.extend_from_slice(&chunk[..remaining]);
+                    truncated = true;
+                    break;
+                }
+                received.extend_from_slice(&chunk[..size])
+            }
             Err(error)
                 if error.kind() == std::io::ErrorKind::WouldBlock
                     || error.kind() == std::io::ErrorKind::TimedOut =>
@@ -91,6 +106,7 @@ pub fn tcp_send(
         received_hex: encode_hex(&received),
         bytes_sent: bytes.len(),
         bytes_received: received.len(),
+        truncated,
     })
 }
 
@@ -120,7 +136,16 @@ pub fn tcp_connect(
         .map_err(|e| format!("克隆连接失败: {}", e))?;
 
     let id = make_conn_id();
-    state.connections.lock().unwrap().insert(id.clone(), stream);
+    {
+        let mut pool = state.connections.lock().unwrap();
+        if pool.len() >= MAX_POOL_CONNECTIONS {
+            return Err(format!(
+                "连接数已达上限（{}），请先断开部分连接",
+                MAX_POOL_CONNECTIONS
+            ));
+        }
+        pool.insert(id.clone(), stream);
+    }
 
     // 启动后台读取线程，通过事件推送接收到的数据
     let conn_id = id.clone();
@@ -220,15 +245,13 @@ pub fn tcp_conn_send(
         received_hex: String::new(),
         bytes_sent,
         bytes_received: 0,
+        truncated: false,
     })
 }
 
 /// 断开长连接
 #[tauri::command]
-pub fn tcp_disconnect(
-    state: tauri::State<'_, TcpPool>,
-    conn_id: String,
-) -> Result<(), String> {
+pub fn tcp_disconnect(state: tauri::State<'_, TcpPool>, conn_id: String) -> Result<(), String> {
     state
         .connections
         .lock()

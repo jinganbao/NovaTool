@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { NButton, NCheckbox, NInputNumber, NRadio, NSpace, useMessage } from "naive-ui";
-import { Copy, Fingerprint, RefreshCw } from "lucide-vue-next";
+import { NButton, NCheckbox, NInputNumber, NRadio, useMessage } from "naive-ui";
+import { Copy, RefreshCw } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
+import { generateNil, generateV4, generateV7 } from "@/utils/uuid";
 
 /* ---- 配置 ---- */
 type UUIDVersion = "v4" | "v7" | "nil";
@@ -18,42 +19,12 @@ const uuids = ref<string[]>([]);
 const message = useMessage();
 const { copyText } = useClipboard(message);
 
-/* ---- v4 (crypto.randomUUID) ---- */
-function generateV4(): string {
-  return crypto.randomUUID();
-}
-
-/* ---- v7 (时间排序) ---- */
-function generateV7(): string {
-  const now = Date.now();
-  const rand = new Uint8Array(10);
-  crypto.getRandomValues(rand);
-
-  const hex = (n: number, len: number) =>
-    n.toString(16).padStart(len, "0");
-
-  const ts = hex(now, 12);
-  const ver = "7";
-  const r1 = hex((rand[0] << 4 | rand[1] & 0x0f), 4); // 随机
-  const varBits = hex(0x8 | (rand[2] & 0x3), 1) + hex(rand[3], 3);
-  const r2 = Array.from(rand.slice(4))
-    .map((b) => hex(b, 2))
-    .join("");
-
-  return `${ts.slice(0, 8)}-${ts.slice(8)}-${ver}${r1}-${varBits}-${r2}`;
-}
-
-/* ---- NIL ---- */
-function generateNil(): string {
-  return "00000000-0000-0000-0000-000000000000";
-}
-
 /* ---- 生成 ---- */
 function generate() {
   const n = Math.max(1, Math.min(500, count.value));
   const results: string[] = [];
   for (let i = 0; i < n; i++) {
-    let uuid = "";
+    let uuid: string;
     if (version.value === "v4") uuid = generateV4();
     else if (version.value === "v7") uuid = generateV7();
     else uuid = generateNil();

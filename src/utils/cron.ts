@@ -30,7 +30,7 @@ export function parseCron(expr: string): CronFields | null {
 
   // 校验每个字段的合法性
   for (const part of parts) {
-    if (!/^[\d\-\*\/,]+$/.test(part)) return null;
+    if (!/^[\d*,/-]+$/.test(part)) return null;
   }
 
   // 值范围校验: minute:0-59, hour:0-23, day:1-31, month:1-12, weekday:0-7
@@ -72,7 +72,7 @@ function validateFieldRange(field: string, min: number, max: number): boolean {
 }
 
 /** 判断某个值是否匹配 cron 字段（支持 * / - ,） */
-function fieldMatches(field: string, value: number, min: number, max: number): boolean {
+function fieldMatches(field: string, value: number, min: number, _max: number): boolean {
   const items = field.split(",");
   for (const item of items) {
     let step = 1;
@@ -139,7 +139,11 @@ export function nextRuns(cron: CronFields, count: number, from?: Date): Date[] {
         if (!fieldMatches(cron.dayOfMonth, d, 1, 31)) continue;
 
         const dow = new Date(y, mo - 1, d).getDay(); // 0=Sun
-        if (!fieldMatches(cron.dayOfWeek, dow, 0, 6)) continue;
+        // 标准 cron 中 7 也代表周日（与 0 等价），归一化匹配
+        const dowMatches =
+          fieldMatches(cron.dayOfWeek, dow, 0, 6) ||
+          (dow === 0 && fieldMatches(cron.dayOfWeek, 7, 0, 7));
+        if (!dowMatches) continue;
 
         for (let h = 0; h <= 23 && results.length < count; h++) {
           if (!fieldMatches(cron.hour, h, 0, 23)) continue;
@@ -148,7 +152,8 @@ export function nextRuns(cron: CronFields, count: number, from?: Date): Date[] {
             if (!fieldMatches(cron.minute, mi, 0, 59)) continue;
 
             const dt = new Date(y, mo - 1, d, h, mi, 0, 0);
-            if (dt > start) {
+            // start 已前进到"下一分钟"，此处用 >= 保证该分钟本身被包含
+            if (dt >= start) {
               results.push(dt);
             }
           }
@@ -164,7 +169,7 @@ export function nextRuns(cron: CronFields, count: number, from?: Date): Date[] {
 function descField(field: string, unit: string): string {
   if (field === "*") return `每${unit}`;
   if (field.includes("/")) {
-    const [_, step] = field.split("/");
+    const [, step] = field.split("/");
     return `每${step}${unit}`;
   }
   if (field.includes("-")) {

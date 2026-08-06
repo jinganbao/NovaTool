@@ -1,34 +1,53 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { NButton, NSpace, useMessage } from "naive-ui";
 import { Copy, Minimize2, Sparkles } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import CodeEditor from "@/components/editor/CodeEditor.vue";
 import DualPaneTool from "@/components/layout/DualPaneTool.vue";
 import { useClipboard } from "@/composables/useClipboard";
-import { compressXml, formatXml } from "@/utils/formatters";
 
 const message = useMessage();
 const { copyText } = useClipboard(message);
 const input = ref("<root><name>NovaTool</name><stack>Tauri + Vue3</stack></root>");
 const output = ref("");
 const error = ref("");
+const formatting = ref(false);
 
-function format() {
+function toErrorMessage(err: unknown): string {
+  return typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+}
+
+async function format() {
+  formatting.value = true;
   try {
-    output.value = formatXml(input.value);
+    // 格式化在 Rust 端执行（quick-xml），完整保留 CDATA/注释/DOCTYPE，错误带行列号
+    output.value = await invoke<string>("xml_format", { input: input.value, mode: "pretty" });
     error.value = "";
     message.success("XML 已格式化");
   } catch (err) {
     output.value = "";
-    error.value = err instanceof Error ? err.message : String(err);
+    error.value = toErrorMessage(err);
     message.error("XML 格式化失败");
+  } finally {
+    formatting.value = false;
   }
 }
 
-function compress() {
-  output.value = compressXml(input.value);
-  error.value = "";
+async function compress() {
+  formatting.value = true;
+  try {
+    output.value = await invoke<string>("xml_format", { input: input.value, mode: "compact" });
+    error.value = "";
+    message.success("XML 已压缩");
+  } catch (err) {
+    output.value = "";
+    error.value = toErrorMessage(err);
+    message.error("XML 压缩失败");
+  } finally {
+    formatting.value = false;
+  }
 }
 
 function copy() {

@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount } from "vue";
+import { computed, ref, watch, onBeforeUnmount } from "vue";
 import QRCode from "qrcode";
-import { NButton, NInputNumber, NRadio, NSpace, useMessage } from "naive-ui";
+import { NButton, NInputNumber, NRadio, useMessage } from "naive-ui";
 import { Copy, Download, Eraser, QrCode } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
-import { useClipboard } from "@/composables/useClipboard";
 
 /* ---- 配置 ---- */
 const input = ref("https://novatool.app");
 const qrSvg = ref("");
+// 用 data URL 渲染，避免 v-html 的 XSS 风险面
+const qrDataUrl = computed(() =>
+  qrSvg.value ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(qrSvg.value)}` : "",
+);
 
 type ErrorLevel = "L" | "M" | "Q" | "H";
 const errorLevel = ref<ErrorLevel>("M");
@@ -25,7 +28,6 @@ const levelOptions = [
 
 /* ---- 工具 ---- */
 const message = useMessage();
-const { copyText } = useClipboard(message);
 
 /* ---- 生成 ---- */
 async function generate() {
@@ -192,7 +194,9 @@ async function copyImage() {
           </n-space>
         </div>
 
-        <div v-if="qrSvg" class="qr-preview" v-html="qrSvg"></div>
+        <div v-if="qrSvg" class="qr-preview">
+          <img :src="qrDataUrl" alt="QR Code" draggable="false" />
+        </div>
         <div v-else class="qr-empty">
           <QrCode :size="36" />
           <span>输入内容生成二维码</span>

@@ -24,6 +24,5 @@ src-tauri/gen/
 test
 *.iml
 .fastRequest
-scripts
 .trae
 .pnpm-store

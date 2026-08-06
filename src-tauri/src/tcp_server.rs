@@ -3,10 +3,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, Mutex};
-use tauri::{AppHandle, Emitter};
 
 /// 推送到前端的日志事件
 #[derive(Clone, Serialize)]
@@ -28,7 +28,8 @@ pub struct ServerEvent {
 pub struct ServerState {
     running: Arc<AtomicBool>,
     shutdown_tx: Arc<Mutex<Option<broadcast::Sender<()>>>>,
-    client_senders: Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<String>>>>,
+    // bounded channel：客户端消费过慢时发送端 try_send 失败，防止内存无限堆积
+    client_senders: Arc<Mutex<HashMap<String, tokio::sync::mpsc::Sender<Vec<u8>>>>>,
 }
 
 impl Default for ServerState {
@@ -42,17 +43,24 @@ impl Default for ServerState {
 }
 
 /// 启动 TCP 服务端：监听端口，多客户端管理，支持向客户端发送数据
+/// lan=true 时绑定 0.0.0.0（局域网可访问），默认仅本机 127.0.0.1
 #[tauri::command]
 pub async fn tcp_server_start(
     app: AppHandle,
     state: tauri::State<'_, ServerState>,
     port: u16,
+    lan: Option<bool>,
 ) -> Result<(), String> {
     if state.running.load(Ordering::SeqCst) {
         return Err("服务器已在运行中".into());
     }
 
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
+    let bind_addr = if lan.unwrap_or(false) {
+        format!("0.0.0.0:{}", port)
+    } else {
+        format!("127.0.0.1:{}", port)
+    };
+    let listener = TcpListener::bind(&bind_addr)
         .await
         .map_err(|e| format!("绑定端口失败: {}", e))?;
 
@@ -69,7 +77,7 @@ pub async fn tcp_server_start(
             event_type: "info".into(),
             client_id: "-".into(),
             addr: "-".into(),
-            message: format!("服务器已启动，监听 0.0.0.0:{}", port),
+            message: format!("服务器已启动，监听 {}", bind_addr),
             text: None,
             hex: None,
             bytes: None,
@@ -123,8 +131,8 @@ pub async fn tcp_server_start(
                                 bytes: None,
                             });
 
-                            // 注册客户端发送通道
-                            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+                            // 注册客户端发送通道（bounded，防内存无限堆积）
+                            let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
                             server_senders.lock().await.insert(client_id.clone(), tx);
 
                             // 每个客户端一个任务：读取 + 发送
@@ -140,7 +148,7 @@ pub async fn tcp_server_start(
                                     tokio::select! {
                                         Some(data) = rx.recv() => {
                                             use tokio::io::AsyncWriteExt;
-                                            if let Err(e) = stream.write_all(data.as_bytes()).await {
+                                            if let Err(e) = stream.write_all(&data).await {
                                                 let _ = app_clone.emit("tcp-server-event", ServerEvent {
                                                     event_type: "error".into(),
                                                     client_id: cid_clone.clone(),
@@ -148,14 +156,25 @@ pub async fn tcp_server_start(
                                                     message: format!("发送失败: {}", e),
                                                     text: None, hex: None, bytes: None,
                                                 });
+                                                // 发送失败说明连接已不可写：清理并结束该客户端任务
+                                                conn_cnt.fetch_sub(1, Ordering::SeqCst);
+                                                ss.lock().await.remove(&cid_clone);
+                                                let _ = app_clone.emit("tcp-server-event", ServerEvent {
+                                                    event_type: "disconnect".into(),
+                                                    client_id: cid_clone.clone(),
+                                                    addr: addr_clone.clone(),
+                                                    message: "连接已断开".into(),
+                                                    text: None, hex: None, bytes: None,
+                                                });
+                                                break;
                                             } else {
                                                 let _ = app_clone.emit("tcp-server-event", ServerEvent {
                                                     event_type: "server-send".into(),
                                                     client_id: cid_clone.clone(),
                                                     addr: addr_clone.clone(),
                                                     message: format!("已发送 {} bytes", data.len()),
-                                                    text: Some(data.clone()),
-                                                    hex: None,
+                                                    text: Some(String::from_utf8_lossy(&data).to_string()),
+                                                    hex: Some(crate::utils::encode_hex(&data)),
                                                     bytes: Some(data.len()),
                                                 });
                                             }
@@ -226,15 +245,18 @@ pub async fn tcp_server_start(
         running.store(false, Ordering::SeqCst);
         // shutdown_tx 的 Arc 引用在这里自动 drop，stop 命令能检测到 None
         drop(shutdown_guard);
-        let _ = app_handle.emit("tcp-server-event", ServerEvent {
-            event_type: "info".into(),
-            client_id: "-".into(),
-            addr: "-".into(),
-            message: "服务器已停止".into(),
-            text: None,
-            hex: None,
-            bytes: None,
-        });
+        let _ = app_handle.emit(
+            "tcp-server-event",
+            ServerEvent {
+                event_type: "info".into(),
+                client_id: "-".into(),
+                addr: "-".into(),
+                message: "服务器已停止".into(),
+                text: None,
+                hex: None,
+                bytes: None,
+            },
+        );
     });
 
     Ok(())
@@ -242,9 +264,7 @@ pub async fn tcp_server_start(
 
 /// 停止 TCP 服务端
 #[tauri::command]
-pub async fn tcp_server_stop(
-    state: tauri::State<'_, ServerState>,
-) -> Result<(), String> {
+pub async fn tcp_server_stop(state: tauri::State<'_, ServerState>) -> Result<(), String> {
     let mut guard = state.shutdown_tx.lock().await;
     if let Some(tx) = guard.take() {
         let _ = tx.send(());
@@ -257,16 +277,31 @@ pub async fn tcp_server_stop(
     }
 }
 
-/// 向指定客户端发送数据
+/// 向指定客户端发送数据（mode="hex" 时按 HEX 字符串解码后发送）
 #[tauri::command]
 pub async fn tcp_server_send(
     state: tauri::State<'_, ServerState>,
     client_id: String,
     data: String,
+    mode: Option<String>,
 ) -> Result<(), String> {
+    // 单次发送上限（1MB），防止超大 payload 堆积内存
+    const MAX_SEND_BYTES: usize = 1_000_000;
+    if data.len() > MAX_SEND_BYTES {
+        return Err(format!("发送数据过大（上限 {} 字节）", MAX_SEND_BYTES));
+    }
+
+    let bytes = if mode.as_deref() == Some("hex") {
+        crate::utils::decode_hex(&data)?
+    } else {
+        data.into_bytes()
+    };
+
     let senders = state.client_senders.lock().await;
     if let Some(tx) = senders.get(&client_id) {
-        tx.send(data).map_err(|_| "客户端已断开".to_string())
+        // bounded channel 已满说明客户端消费过慢，拒绝本次发送避免内存堆积
+        tx.try_send(bytes)
+            .map_err(|_| "发送失败：客户端消费过慢或已断开".to_string())
     } else {
         Err(format!("客户端 {} 不存在", client_id))
     }

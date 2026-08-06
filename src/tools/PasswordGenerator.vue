@@ -1,19 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { NButton, NCheckbox, NInputNumber, NSlider, NSpace, NTag, useMessage } from "naive-ui";
-import { Copy, RefreshCw, ShieldCheck } from "lucide-vue-next";
+import { NButton, NCheckbox, NInputNumber, NSlider, useMessage } from "naive-ui";
+import { Copy, RefreshCw } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
-
-/* ---- 字符集 ---- */
-const CHAR_SETS: Record<string, { label: string; chars: string }> = {
-  upper:   { label: "大写字母 A-Z",  chars: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" },
-  lower:   { label: "小写字母 a-z",  chars: "abcdefghijklmnopqrstuvwxyz" },
-  digits:  { label: "数字 0-9",      chars: "0123456789" },
-  symbols: { label: "特殊符号",      chars: "!@#$%^&*()_+-=[]{}|;:,.<>?/~`" },
-};
-
-const AMBIGUOUS = "0O1lI";
+import { CHAR_SETS, generatePassword } from "@/utils/password";
 
 /* ---- 配置 ---- */
 const length = ref(16);
@@ -31,30 +22,18 @@ const { copyText } = useClipboard(message);
 
 /* ---- 生成 ---- */
 function generate() {
-  let pool = "";
-  if (useUpper.value) pool += CHAR_SETS.upper.chars;
-  if (useLower.value) pool += CHAR_SETS.lower.chars;
-  if (useDigits.value) pool += CHAR_SETS.digits.chars;
-  if (useSymbols.value) pool += CHAR_SETS.symbols.chars;
-
-  if (avoidAmbiguous.value) {
-    pool = [...pool].filter((c) => !AMBIGUOUS.includes(c)).join("");
+  try {
+    password.value = generatePassword({
+      length: length.value,
+      upper: useUpper.value,
+      lower: useLower.value,
+      digits: useDigits.value,
+      symbols: useSymbols.value,
+      avoidAmbiguous: avoidAmbiguous.value,
+    });
+  } catch (err) {
+    message.warning(err instanceof Error ? err.message : String(err));
   }
-
-  if (!pool) {
-    message.warning("请至少选择一种字符集");
-    return;
-  }
-
-  const array = new Uint32Array(length.value);
-  crypto.getRandomValues(array);
-
-  let result = "";
-  for (let i = 0; i < length.value; i++) {
-    result += pool[array[i] % pool.length];
-  }
-
-  password.value = result;
 }
 
 /* 首次加载自动生成 */

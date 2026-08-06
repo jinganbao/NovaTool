@@ -47,6 +47,7 @@ type TcpSendResult = {
   receivedHex: string;
   bytesSent: number;
   bytesReceived: number;
+  truncated: boolean;
 };
 
 /* ---- 本地持久化 ---- */
@@ -343,10 +344,12 @@ async function sendPayload() {
       const received = receiveMode.value === "hex" ? result.receivedHex : result.receivedText;
       appendLog(
         "recv",
-        `${result.bytesReceived} bytes${received ? `\n${received}` : " (empty)"}`,
+        `${result.bytesReceived} bytes${received ? `\n${received}` : " (empty)"}${result.truncated ? "\n[响应超过 16MB 上限，已截断]" : ""}`,
       );
     }
-    message.success(`发送完成：${result.bytesSent} bytes`);
+    message.success(
+      result.truncated ? `发送完成：${result.bytesSent} bytes（响应已截断）` : `发送完成：${result.bytesSent} bytes`,
+    );
   } catch (error) {
     // 长连接断开时自动清理
     if (usePersistent && error instanceof Error && error.message.includes("不存在或已断开")) {

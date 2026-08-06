@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { NButton, NCheckbox, NInput, NSpace, NTag, useMessage } from "naive-ui";
 import { Copy, Eraser, Regex } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
@@ -43,100 +43,176 @@ interface MatchResult {
   groups: Record<string, string>;
 }
 
+/* ---- 防护限制 ---- */
+const MAX_TEST_LENGTH = 1_000_000; // 测试文本上限（约 1MB）
+const MAX_MATCH_RESULTS = 5000; // 匹配结果上限
+const MATCH_TIMEOUT_MS = 2000; // 执行超时（毫秒），超时 terminate Worker 中止
+const MAX_REPLACE_WITH_LENGTH = 64 * 1024; // 替换内容上限
+
+type MatchStatus = "idle" | "running" | "done" | "timeout" | "too-large" | "error";
+
 const matches = ref<MatchResult[]>([]);
 const decorations = ref<LineDecoration[]>([]);
+const matchStatus = ref<MatchStatus>("idle");
+const matchError = ref("");
+const truncated = ref(false);
+
+/* ---- Worker 管理：正则放 Worker 执行，灾难性回溯可通过 terminate 强制中止 ---- */
+let worker: Worker | null = null;
+let workerSeq = 0; // 消息序号（递增，避免随机数碰撞）
+let matchGen = 0; // 匹配请求代际：新匹配请求使旧请求回调失效
+let replaceGen = 0; // 替换请求代际：与匹配分离，替换不影响匹配状态
+
+function getWorker(): Worker {
+  if (!worker) {
+    worker = new Worker(new URL("../utils/regexWorker.ts", import.meta.url), { type: "module" });
+  }
+  return worker;
+}
+
+function runInWorker<T>(payload: Record<string, unknown>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const w = getWorker();
+    const seq = ++workerSeq;
+    let settled = false;
+
+    const handler = (e: MessageEvent) => {
+      if (e.data?.seq !== seq || settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      w.removeEventListener("message", handler);
+      if (e.data?.ok) {
+        resolve(e.data as T);
+      } else {
+        reject(new Error(e.data?.error ?? "未知错误"));
+      }
+    };
+
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      // 超时：terminate 并重建，后续请求使用新 Worker
+      w.removeEventListener("message", handler);
+      w.terminate();
+      if (worker === w) worker = null;
+      reject(new Error("timeout"));
+    }, MATCH_TIMEOUT_MS);
+
+    w.addEventListener("message", handler);
+    w.postMessage({ seq, ...payload });
+  });
+}
+
+onUnmounted(() => {
+  window.clearTimeout(debounceTimer);
+  worker?.terminate();
+  worker = null;
+});
 
 /* ---- 计算匹配 ---- */
-function computeMatches() {
+async function computeMatches() {
+  const gen = ++matchGen;
   const re = regex.value;
   if (!re || !testText.value) {
     matches.value = [];
     decorations.value = [];
+    truncated.value = false;
+    matchError.value = "";
+    matchStatus.value = "idle";
     return;
   }
 
-  const results: MatchResult[] = [];
-  const decos: LineDecoration[] = [];
-
-  // 按行处理来生成 decorations
-  const lines = testText.value.split("\n");
-  let offset = 0;
-
-  // 全局匹配
-  let m: RegExpExecArray | null;
-  const reGlobal = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
-
-  while ((m = reGlobal.exec(testText.value)) !== null) {
-    results.push({
-      index: m.index,
-      text: m[0],
-      length: m[0].length,
-      groups: m.groups || {},
-    });
-
-    // 找到匹配在哪个行
-    const matchStart = m.index;
-    const matchEnd = m.index + m[0].length;
-
-    // 找出涉及的行
-    let charCount = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const lineStart = charCount;
-      const lineEnd = charCount + lines[i].length;
-      charCount = lineEnd + 1; // +1 for \n
-
-      if (matchEnd > lineStart && matchStart < lineEnd) {
-        const relStart = Math.max(0, matchStart - lineStart);
-        const relEnd = Math.min(lines[i].length, matchEnd - lineStart);
-        // 添加行内标记：用 mark 装饰
-        decos.push({
-          from: i + 1,
-          to: i + 1,
-          class: "regex-match",
-        });
-      }
-    }
-
-    if (!re.flags.includes("g")) break;
+  if (testText.value.length > MAX_TEST_LENGTH) {
+    matches.value = [];
+    decorations.value = [];
+    matchStatus.value = "too-large";
+    return;
   }
 
-  matches.value = results;
-  decorations.value = decos;
-  // 行级装饰只是高亮整行，我们也需要字符级...但 CodeMirror Decoration.line 是行级别的
-  // 这里我们用行高亮作为简化方案，配合下面列表显示详情
+  matchStatus.value = "running";
+  try {
+    const result = await runInWorker<{
+      matches: MatchResult[];
+      decorations: LineDecoration[];
+      truncated: boolean;
+    }>({
+      type: "match",
+      pattern: re.source,
+      flags: flagString(),
+      text: testText.value,
+      maxResults: MAX_MATCH_RESULTS,
+    });
+    if (gen !== matchGen) return; // 已被更新的匹配请求取代，丢弃过期结果
+    matches.value = result.matches;
+    decorations.value = result.decorations;
+    truncated.value = result.truncated;
+    matchError.value = "";
+    matchStatus.value = "done";
+  } catch (err) {
+    if (gen !== matchGen) return;
+    matches.value = [];
+    decorations.value = [];
+    if (err instanceof Error && err.message === "timeout") {
+      matchStatus.value = "timeout";
+    } else {
+      matchStatus.value = "error";
+      matchError.value = err instanceof Error ? err.message : String(err);
+    }
+  }
 }
 
-/* ---- 实时计算 ---- */
+/* ---- 实时计算：防抖 150ms，避免每次击键都执行匹配 ---- */
+let debounceTimer: number | undefined;
 watch([pattern, testText, flags], () => {
-  computeMatches();
+  window.clearTimeout(debounceTimer);
+  debounceTimer = window.setTimeout(() => {
+    void computeMatches();
+  }, 150);
 }, { deep: true, immediate: true });
 
 /* ---- 替换 ---- */
-function doReplace() {
+const replacing = ref(false);
+
+async function doReplace() {
+  const gen = ++replaceGen;
   const re = regex.value;
   if (!re) {
     message.warning("正则表达式无效");
     return;
   }
+  if (testText.value.length > MAX_TEST_LENGTH) {
+    message.warning(`测试文本超过 ${MAX_TEST_LENGTH / 1_000_000}MB 上限`);
+    return;
+  }
+  if (replaceWith.value.length > MAX_REPLACE_WITH_LENGTH) {
+    message.warning(`替换内容超过 ${MAX_REPLACE_WITH_LENGTH / 1024}KB 上限`);
+    return;
+  }
+  replacing.value = true;
   try {
-    const reWithG = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
-    replacedText.value = testText.value.replace(reWithG, replaceWith.value);
+    const result = await runInWorker<{ replaced: string }>({
+      type: "replace",
+      pattern: re.source,
+      flags: flagString(),
+      text: testText.value,
+      replaceWith: replaceWith.value,
+    });
+    if (gen !== replaceGen) return;
+    replacedText.value = result.replaced;
     message.success("替换完成");
   } catch (err) {
-    message.error("替换失败：" + (err instanceof Error ? err.message : String(err)));
+    if (gen !== replaceGen) return;
+    if (err instanceof Error && err.message === "timeout") {
+      message.error("替换超时，正则可能存在灾难性回溯");
+    } else {
+      message.error("替换失败：" + (err instanceof Error ? err.message : String(err)));
+    }
+  } finally {
+    replacing.value = false;
   }
 }
 
 /* ---- 工具 ---- */
-function clearAll() {
-  pattern.value = "";
-  testText.value = "";
-  replaceWith.value = "";
-  replacedText.value = "";
-  matches.value = [];
-  decorations.value = [];
-}
-
 function copyMatches() {
   const text = matches.value
     .map((m, i) => `${i + 1}. "${m.text}" (位置 ${m.index}, 长度 ${m.length})`)
@@ -191,8 +267,13 @@ function copyMatches() {
         <div class="pane-head">
           <h2>匹配结果</h2>
           <n-space :size="6">
-            <n-tag v-if="matches.length > 0" type="info" :bordered="false" size="small">{{ matches.length }} 处匹配</n-tag>
-            <n-tag v-else-if="regex" :bordered="false" size="small">无匹配</n-tag>
+            <n-tag v-if="matchStatus === 'running'" type="info" :bordered="false" size="small">计算中…</n-tag>
+            <n-tag v-else-if="matchStatus === 'timeout'" type="error" :bordered="false" size="small">执行超时，已中止（可能存在灾难性回溯）</n-tag>
+            <n-tag v-else-if="matchStatus === 'too-large'" type="error" :bordered="false" size="small">文本超过 1MB 限制</n-tag>
+            <n-tag v-else-if="matchStatus === 'error'" type="error" :bordered="false" size="small">匹配出错</n-tag>
+            <n-tag v-else-if="matchStatus === 'done' && truncated" type="warning" :bordered="false" size="small">结果过多，仅显示前 {{ MAX_MATCH_RESULTS }} 条</n-tag>
+            <n-tag v-else-if="matchStatus === 'done' && matches.length > 0" type="info" :bordered="false" size="small">{{ matches.length }} 处匹配</n-tag>
+            <n-tag v-else-if="matchStatus === 'done'" :bordered="false" size="small">无匹配</n-tag>
             <n-button
               size="tiny"
               secondary
@@ -203,11 +284,23 @@ function copyMatches() {
             >
           </n-space>
         </div>
-        <div v-if="matches.length === 0" class="results-empty">
+        <div v-if="matches.length === 0 && matchStatus === 'idle'" class="results-empty">
           <Regex :size="20" />
           <span>输入正则和测试文本查看匹配</span>
         </div>
-        <div v-else class="results-list">
+        <div v-else-if="matches.length === 0 && matchStatus === 'running'" class="results-empty">
+          <span>计算中…</span>
+        </div>
+        <div v-else-if="matchStatus === 'error'" class="results-empty">
+          <span>{{ matchError }}</span>
+        </div>
+        <div v-else-if="matchStatus === 'timeout'" class="results-empty">
+          <span>执行超时（{{ MATCH_TIMEOUT_MS / 1000 }}s），已中止 —— 正则可能存在灾难性回溯</span>
+        </div>
+        <div v-else-if="matchStatus === 'too-large'" class="results-empty">
+          <span>测试文本超过 1MB 限制，请缩小文本</span>
+        </div>
+        <div v-else-if="matches.length > 0" class="results-list">
           <div v-for="(m, i) in matches" :key="i" class="match-row">
             <span class="match-num">{{ i + 1 }}</span>
             <code class="match-text">"{{ m.text }}"</code>
@@ -230,7 +323,7 @@ function copyMatches() {
           placeholder="替换内容，如 [$&] 引用匹配"
           class="replace-input"
         />
-        <n-button size="small" type="primary" @click="doReplace" :disabled="!regex || matches.length === 0">执行替换</n-button>
+        <n-button size="small" type="primary" @click="doReplace" :disabled="!regex || testText.length === 0 || replacing" :loading="replacing">执行替换</n-button>
       </div>
       <div v-if="replacedText" class="replace-result">
         <div class="replace-result-head">

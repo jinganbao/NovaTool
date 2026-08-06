@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { NButton, NSpace, useMessage } from "naive-ui";
 import { Copy, Eraser, Minimize2, Sparkles } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import CodeEditor from "@/components/editor/CodeEditor.vue";
 import DualPaneTool from "@/components/layout/DualPaneTool.vue";
 import { useClipboard } from "@/composables/useClipboard";
-import { formatJson as runFormatJson } from "@/utils/formatters";
 
 const message = useMessage();
 const { copyText } = useClipboard(message);
@@ -14,14 +14,22 @@ const input = ref('{"name":"NovaTool","stack":["Tauri","Vue3","Naive UI"],"scene
 const output = ref("");
 const error = ref("");
 
-function format(space = 2) {
+function toErrorMessage(err: unknown): string {
+  return typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+}
+
+async function format(space = 2) {
   try {
-    output.value = runFormatJson(input.value, space);
+    // 格式化在 Rust 端执行（serde_json），错误自带行列号，大输入不阻塞 UI
+    output.value = await invoke<string>("json_format", {
+      input: input.value,
+      mode: space === 0 ? "compact" : "pretty",
+    });
     error.value = "";
     message.success(space === 0 ? "JSON 已压缩" : "JSON 已格式化");
   } catch (err) {
     output.value = "";
-    error.value = err instanceof Error ? err.message : String(err);
+    error.value = toErrorMessage(err);
     message.error("JSON 校验失败");
   }
 }
