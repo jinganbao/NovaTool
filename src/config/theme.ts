@@ -67,7 +67,7 @@ export function getThemeOverrides(config: AppConfig, resolvedMode: "dark" | "lig
       textColorBase: dark ? "#E7ECF3" : "#17202A",
       textColor1: dark ? "#E7ECF3" : "#17202A",
       textColor2: dark ? "#9AA5B5" : "#5D6978",
-      textColor3: dark ? "#909CAC" : "#6A7585",
+      textColor3: dark ? "#6F7A89" : "#7B8797",
     },
   };
 }
@@ -86,7 +86,7 @@ export function getThemeVars(config: AppConfig, resolvedMode: "dark" | "light") 
     "--border-strong": dark ? "#39424E" : "#BCC8D6",
     "--text-primary": dark ? "#E7ECF3" : "#17202A",
     "--text-secondary": dark ? "#9AA5B5" : "#5D6978",
-    "--text-muted": dark ? "#909CAC" : "#6A7585",
+    "--text-muted": dark ? "#6F7A89" : "#7B8797",
     "--brand": accent,
     "--brand-hover": mix(accent, "#FFFFFF", 0.18),
     "--brand-active": mix(accent, "#000000", 0.18),

@@ -62,13 +62,6 @@ body {
   background: transparent;
 }
 
-/* ---------- 通用过渡 ---------- */
-* {
-  transition-property: background-color, border-color, color, opacity, transform, box-shadow;
-  transition-duration: 0.15s;
-  transition-timing-function: ease;
-}
-
 /* ---------- naive-ui 输入框字体 ---------- */
 .n-input .n-input__input-el,
 .n-input .n-input__textarea-el {
@@ -77,6 +70,6 @@ body {
 
 /* ---------- 聚焦光环 ---------- */
 :focus-visible {
-  outline: 2px solid var(--brand-soft, rgba(61, 214, 198, 0.5));
+  outline: 2px solid var(--brand, #3dd6c6);
   outline-offset: 1px;
 }

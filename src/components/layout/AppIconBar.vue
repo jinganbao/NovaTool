@@ -1,180 +1,243 @@
 <script setup lang="ts">
-import { Hammer } from "lucide-vue-next";
-import { NTooltip } from "naive-ui";
+import { computed, ref } from "vue";
+import { Hammer, Settings } from "lucide-vue-next";
+import { NPopover, NTooltip } from "naive-ui";
 import { toolGroups } from "@/config/tools";
 import type { ToolKey } from "@/types/tools";
-import { ref } from "vue";
 
-defineProps<{ activeTool: ToolKey }>();
+const props = defineProps<{ activeTool: ToolKey }>();
 const emit = defineEmits<{
   "update:active-tool": [key: ToolKey];
+  settings: [];
 }>();
 
-// macOS Overlay 标题栏：红绿灯覆盖图标栏顶部
 const isMac = ref(typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent));
+const openGroup = ref<string | null>(null);
+const activeGroupKey = computed(
+  () => toolGroups.find((group) => group.tools.some((tool) => tool.key === props.activeTool))?.key,
+);
+
+function setGroupOpen(groupKey: string, show: boolean) {
+  openGroup.value = show ? groupKey : null;
+}
+
+function selectTool(key: ToolKey) {
+  emit("update:active-tool", key);
+  openGroup.value = null;
+}
 </script>
 
 <template>
   <aside class="icon-bar" :class="{ mac: isMac }">
-    <!-- 品牌 -->
     <div class="brand-mark" title="NovaTool">
       <Hammer :size="20" stroke-width="2.2" />
     </div>
 
-    <!-- 工具图标 -->
-    <nav class="icon-nav" aria-label="工具">
-      <template v-for="group in toolGroups" :key="group.key">
-        <div v-if="group.tools.length > 0" class="group-sep" />
-        <n-tooltip
-          v-for="tool in group.tools"
-          :key="tool.key"
-          placement="right"
-          :show-arrow="false"
-        >
-          <template #trigger>
-            <button
-              class="icon-btn"
-              :class="{ active: activeTool === tool.key }"
-              :aria-label="tool.title"
-              :aria-current="activeTool === tool.key ? 'page' : undefined"
-              type="button"
-              @click="emit('update:active-tool', tool.key)"
-            >
-              <component :is="tool.icon" :size="18" stroke-width="2" />
-              <span v-if="tool.status === 'draft'" class="draft-dot" />
-            </button>
-          </template>
-          <span class="tooltip-label">
-            {{ tool.title }}
-            <small v-if="tool.status === 'draft'">设计中</small>
-          </span>
-        </n-tooltip>
-      </template>
+    <nav class="group-nav" aria-label="工具分类">
+      <n-popover
+        v-for="group in toolGroups"
+        :key="group.key"
+        trigger="click"
+        placement="right-start"
+        :show-arrow="false"
+        :show="openGroup === group.key"
+        raw
+        @update:show="setGroupOpen(group.key, $event)"
+      >
+        <template #trigger>
+          <n-tooltip
+            placement="right"
+            :show-arrow="false"
+            :disabled="openGroup === group.key"
+          >
+            <template #trigger>
+              <button
+                class="rail-btn"
+                :class="{ active: activeGroupKey === group.key }"
+                type="button"
+                :aria-label="group.title"
+                :aria-expanded="openGroup === group.key"
+              >
+                <component :is="group.icon" :size="18" stroke-width="2" />
+              </button>
+            </template>
+            {{ group.title }}
+          </n-tooltip>
+        </template>
+
+        <div class="tool-menu" role="menu" :aria-label="group.title">
+          <div class="tool-menu-title">{{ group.title }}</div>
+          <button
+            v-for="tool in group.tools"
+            :key="tool.key"
+            class="tool-menu-item"
+            :class="{ active: activeTool === tool.key }"
+            type="button"
+            role="menuitem"
+            @click="selectTool(tool.key)"
+          >
+            <component :is="tool.icon" :size="16" />
+            <span class="tool-menu-copy">
+              <strong>{{ tool.title }}</strong>
+              <small>{{ tool.desc }}</small>
+            </span>
+          </button>
+        </div>
+      </n-popover>
     </nav>
+
+    <div class="rail-footer">
+      <n-tooltip placement="right" :show-arrow="false">
+        <template #trigger>
+          <button class="rail-btn" type="button" aria-label="设置" @click="emit('settings')">
+            <Settings :size="18" />
+          </button>
+        </template>
+        设置
+      </n-tooltip>
+    </div>
   </aside>
 </template>
 
 <style scoped>
 .icon-bar {
   width: 56px;
-  flex-shrink: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 10px;
   padding: 12px 0;
   border-right: 1px solid var(--border-subtle);
   background: var(--bg-sider);
-  gap: 8px;
   z-index: 10;
 }
 
-/* macOS Overlay：红绿灯区域避让，品牌 Logo 下移 */
 .icon-bar.mac {
   padding-top: 40px;
 }
 
-/* ---- 品牌 ---- */
 .brand-mark {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
+  border-radius: 8px;
   color: #fff;
   background: var(--brand-gradient);
   box-shadow: 0 2px 8px var(--shadow-strong);
-  margin-bottom: 4px;
 }
 
-/* ---- 导航 ---- */
-.icon-nav {
+.group-nav {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 4px 0;
-  scrollbar-width: none;
+  gap: 6px;
+  padding-top: 8px;
 }
 
-.icon-nav::-webkit-scrollbar {
-  display: none;
-}
-
-.group-sep {
-  width: 24px;
-  height: 1px;
-  background: var(--border-subtle);
-  margin: 6px 0;
+.rail-footer {
+  width: 100%;
   flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
 }
 
-/* ---- 图标按钮 ---- */
-.icon-btn {
+.rail-btn {
   position: relative;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 7px;
   background: transparent;
   color: var(--text-secondary);
   display: grid;
   place-items: center;
   cursor: pointer;
-  flex-shrink: 0;
-  transition: background-color 0.15s, color 0.15s, transform 0.1s;
 }
 
-.icon-btn:hover {
-  background: var(--bg-hover);
+.rail-btn:hover,
+.rail-btn[aria-expanded="true"] {
   color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
-.icon-btn:active {
-  transform: scale(0.92);
-}
-
-.icon-btn.active {
-  background: var(--brand-soft);
+.rail-btn.active {
   color: var(--brand);
-  box-shadow: inset 0 0 0 1px var(--brand-soft);
+  background: var(--brand-soft);
 }
 
-/* 激活指示条 */
-.icon-btn.active::before {
+.rail-btn.active::before {
   content: "";
   position: absolute;
-  left: -9px;
-  top: 50%;
-  transform: translateY(-50%);
+  left: -10px;
   width: 3px;
   height: 18px;
   border-radius: 0 3px 3px 0;
   background: var(--brand);
 }
 
-/* ---- draft 标识 ---- */
-.draft-dot {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--warning);
-  border: 1px solid var(--bg-sider);
+.tool-menu {
+  width: 260px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-lg);
 }
 
-/* ---- tooltip ---- */
-.tooltip-label {
-  font-size: 12px;
-}
-
-.tooltip-label small {
+.tool-menu-title {
+  padding: 6px 8px 8px;
   color: var(--text-muted);
-  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tool-menu-item {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-menu-item:hover,
+.tool-menu-item.active {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.tool-menu-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.tool-menu-copy strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tool-menu-copy small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

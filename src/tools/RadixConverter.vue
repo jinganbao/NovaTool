@@ -1,247 +1,135 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { NButton, NInput, NSelect, useMessage } from "naive-ui";
+import { NButton, NCheckbox, NInput, useMessage } from "naive-ui";
 import { Copy } from "lucide-vue-next";
-import { renderIcon } from "@/utils/render";
+import { convertRadix } from "@/features/radix/radixService";
+import type { RadixBase, SourceRadix } from "@/features/radix/radixService";
 import { useClipboard } from "@/composables/useClipboard";
+import { renderIcon } from "@/utils/render";
 
-/* ---- 类型 ---- */
-interface RadixDef {
-  value: number;
-  label: string;
-  prefix: string;
-  digits: string;
-}
-
-const bases: RadixDef[] = [
-  { value: 2, label: "二进制 (Base 2)", prefix: "0b", digits: "01" },
-  { value: 8, label: "八进制 (Base 8)", prefix: "0o", digits: "01234567" },
-  { value: 10, label: "十进制 (Base 10)", prefix: "", digits: "0123456789" },
-  { value: 16, label: "十六进制 (Base 16)", prefix: "0x", digits: "0123456789ABCDEF" },
+const BASES: Array<{ value: RadixBase; label: string; short: string }> = [
+  { value: 2, label: "二进制", short: "BIN" },
+  { value: 8, label: "八进制", short: "OCT" },
+  { value: 10, label: "十进制", short: "DEC" },
+  { value: 16, label: "十六进制", short: "HEX" },
 ];
 
-/* ---- 状态 ---- */
+const SOURCE_OPTIONS: Array<{ value: SourceRadix; label: string }> = [
+  { value: "auto", label: "自动" },
+  ...BASES.map((base) => ({ value: base.value, label: String(base.value) })),
+];
+
 const message = useMessage();
 const { copyText } = useClipboard(message);
+const input = ref("0xFF");
+const source = ref<SourceRadix>("auto");
+const uppercase = ref(true);
+const includePrefix = ref(true);
 
-const sourceBase = ref<number>(10);
-const sourceValue = ref("255");
-
-/* ---- 计算 ---- */
-interface ConversionLine {
-  base: number;
-  label: string;
-  value: string;
-  error: boolean;
-}
-
-const results = computed<ConversionLine[]>(() => {
-  const raw = sourceValue.value.trim();
-  if (!raw) return bases.map((b) => ({ base: b.value, label: b.label, value: "", error: false }));
-
-  // 验证输入字符
-  const srcDef = bases.find((b) => b.value === sourceBase.value)!;
-  const validDigits = srcDef.digits + srcDef.digits.toLowerCase();
-  const hasInvalid = [...raw].some((ch) => ch !== "-" && !validDigits.includes(ch));
-
-  if (hasInvalid) {
-    return bases.map((b) => ({ base: b.value, label: b.label, value: "输入无效", error: true }));
-  }
-
+const conversion = computed(() => {
   try {
-    // 处理负数
-    let sign = 1n;
-    let numStr = raw;
-    if (raw.startsWith("-")) {
-      sign = -1n;
-      numStr = raw.slice(1);
-    }
-
-    // 用 BigInt 解析（支持超大数）
-    let value: bigint;
-    try {
-      if (sourceBase.value === 10) {
-        value = BigInt(numStr);
-      } else {
-        value = BigInt(`${srcDef.prefix}${numStr}`);
-      }
-      value *= sign;
-    } catch {
-      return bases.map((b) => ({ base: b.value, label: b.label, value: "解析失败", error: true }));
-    }
-
-    return bases.map((b) => {
-      let display: string;
-      if (b.value === 10) {
-        display = value.toString();
-      } else {
-        const abs = value < 0n ? -value : value;
-        const prefix = value < 0n ? "-" : "";
-        display = prefix + abs.toString(b.value).toUpperCase();
-      }
-      return { base: b.value, label: b.label, value: display, error: false };
-    });
-  } catch {
-    return bases.map((b) => ({ base: b.value, label: b.label, value: "解析失败", error: true }));
+    return { data: convertRadix(input.value, source.value, { uppercase: uppercase.value, prefix: includePrefix.value }), error: "" };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : "进制转换失败" };
   }
 });
 
-/* ---- 工具 ---- */
-function copyVal(val: string) {
-  if (val && val !== "输入无效" && val !== "解析失败") {
-    void copyText(val);
-  }
+function copyValue(value: string) {
+  void copyText(value);
 }
 </script>
 
 <template>
-  <section class="tool-panel radix-tool">
-    <!-- ====== 输入区 ====== -->
-    <div class="input-card">
-      <div class="input-row">
-        <n-input
-          v-model:value="sourceValue"
-          size="small"
-          placeholder="输入数值，如 255"
-          class="value-input"
-          @keyup.enter="copyVal(results[2]?.value)"
-        />
-        <n-select
-          v-model:value="sourceBase"
-          size="small"
-          :options="bases.map((b) => ({ label: b.label, value: b.value }))"
-          class="base-select"
-        />
+  <section class="radix-workbench">
+    <section class="input-panel">
+      <div class="input-head">
+        <div><h2>输入整数</h2><span>支持负数、下划线分隔符和任意长度整数</span></div>
+        <span v-if="conversion.data" class="detected">识别为 {{ conversion.data.detectedBase }} 进制</span>
       </div>
-      <div class="input-hint">
-        当前：{{ bases.find((b) => b.value === sourceBase)?.digits.split("").join(" ") }}
-        前缀 {{ bases.find((b) => b.value === sourceBase)?.prefix || "无" }}
-      </div>
-    </div>
 
-    <!-- ====== 结果卡片 ====== -->
-    <div class="results-grid">
-      <div v-for="line in results" :key="line.base" class="result-card">
-        <div class="result-head">
-          <span class="result-label">{{ line.label }}</span>
+      <div class="input-row">
+        <n-input v-model:value="input" size="small" class="radix-input" placeholder="例如 0xFF、0b1010 或 1_000_000" />
+        <div class="segmented" role="radiogroup" aria-label="输入进制">
+          <button
+            v-for="option in SOURCE_OPTIONS"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="source === option.value"
+            :class="{ active: source === option.value }"
+            @click="source = option.value"
+          >{{ option.label }}</button>
+        </div>
+      </div>
+
+      <div class="options-row">
+        <span>输出格式</span>
+        <n-checkbox v-model:checked="includePrefix" size="small">包含进制前缀</n-checkbox>
+        <n-checkbox v-model:checked="uppercase" size="small">十六进制大写</n-checkbox>
+      </div>
+      <div v-if="conversion.error" class="error-line">{{ conversion.error }}</div>
+    </section>
+
+    <section class="results-panel">
+      <header><h2>转换结果</h2><span>输入变化时实时计算</span></header>
+      <div class="result-table">
+        <div v-for="base in BASES" :key="base.value" class="result-row">
+          <span class="base-badge">{{ base.short }}</span>
+          <div class="base-label"><strong>{{ base.label }}</strong><small>Base {{ base.value }}</small></div>
+          <code :class="{ muted: !conversion.data }">{{ conversion.data?.outputs.find((item) => item.base === base.value)?.value || "—" }}</code>
           <n-button
             size="tiny"
             quaternary
+            :aria-label="`复制${base.label}`"
+            :disabled="!conversion.data"
             :render-icon="() => renderIcon(Copy)"
-            :disabled="!line.value || line.error"
-            @click="copyVal(line.value)"
+            @click="copyValue(conversion.data!.outputs.find((item) => item.base === base.value)!.value)"
           />
         </div>
-        <code class="result-value" :class="{ error: line.error }">
-          {{ line.value || "—" }}
-        </code>
       </div>
-    </div>
+    </section>
   </section>
 </template>
 
 <style scoped>
-.tool-panel {
-  flex: 1;
-  min-height: 0;
-  box-sizing: border-box;
-}
-
-.radix-tool {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-}
-
-/* ---- 输入 ---- */
-.input-card {
-  flex-shrink: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  padding: 14px;
-}
-
-.input-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.value-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.base-select {
-  width: 180px;
-  flex-shrink: 0;
-}
-
-.input-hint {
-  margin-top: 8px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-/* ---- 结果 ---- */
-.results-grid {
-  flex: 1;
-  display: grid;
-  gap: 10px;
-}
-
-.result-card {
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  padding: 12px 14px;
-}
-
-.result-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.result-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.result-value {
-  display: block;
-  color: var(--brand);
-  font-size: 18px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-weight: 600;
-  word-break: break-all;
-  line-height: 1.4;
-  user-select: all;
-}
-
-.result-value.error {
-  color: var(--danger);
-  font-size: 14px;
-}
-
-/* ---- 按钮 ---- */
-:deep(.n-button) {
-  height: 28px;
-  font-size: 12px;
-}
-
-@media (max-width: 500px) {
-  .input-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .base-select {
-    width: 100%;
-  }
+.radix-workbench { flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }
+.input-panel, .results-panel { border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-panel); }
+.input-panel { padding: 11px 12px; }
+.input-head, .results-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.input-head > div { display: flex; align-items: baseline; gap: 8px; }
+h2 { margin: 0; color: var(--text-primary); font-size: 13px; }
+.input-head span, .results-panel > header span { color: var(--text-muted); font-size: 10px; }
+.detected { color: var(--brand) !important; }
+.input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 9px; }
+.radix-input { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+.segmented { display: flex; gap: 2px; padding: 2px; border-radius: 5px; background: var(--bg-input); }
+.segmented button { min-width: 38px; height: 24px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text-muted); font-size: 10px; cursor: pointer; }
+.segmented button:hover { color: var(--text-primary); background: var(--bg-hover); }
+.segmented button.active { color: var(--brand); background: var(--brand-soft); font-weight: 600; }
+.segmented button:focus { outline: none; }
+.segmented button:focus-visible { box-shadow: inset 0 0 0 1px var(--brand); }
+.options-row { min-height: 28px; display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.options-row > span { color: var(--text-muted); font-size: 10px; }
+:deep(.n-checkbox__label) { color: var(--text-secondary); font-size: 10px; }
+.error-line { min-height: 24px; display: flex; align-items: center; margin-top: 5px; padding: 0 8px; border-radius: 4px; color: var(--danger); background: var(--danger-soft); font-size: 10px; }
+.results-panel { min-height: 0; display: flex; flex-direction: column; padding: 11px 12px; }
+.results-panel > header { min-height: 28px; margin-bottom: 7px; }
+.results-panel > header { justify-content: flex-start; }
+.result-table { min-height: 0; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: 5px; }
+.result-row { min-height: 58px; display: grid; grid-template-columns: 42px 96px minmax(0, 1fr) 28px; align-items: center; gap: 10px; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); }
+.result-row:last-child { border-bottom: 0; }
+.result-row:hover { background: var(--bg-hover); }
+.base-badge { width: 38px; height: 24px; display: grid; place-items: center; border-radius: 4px; color: var(--brand); background: var(--brand-soft); font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; font-weight: 700; }
+.base-label { display: grid; gap: 2px; }
+.base-label strong { color: var(--text-secondary); font-size: 11px; }
+.base-label small { color: var(--text-muted); font-size: 9px; }
+.result-row code { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; line-height: 1.45; user-select: all; }
+.result-row code.muted { color: var(--text-muted); }
+@media (max-width: 700px) {
+  .input-row { grid-template-columns: 1fr; }
+  .segmented { width: fit-content; }
+  .result-row { grid-template-columns: 42px minmax(0, 1fr) 28px; }
+  .base-label { display: none; }
 }
 </style>
+

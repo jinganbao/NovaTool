@@ -12,11 +12,13 @@ export function loadJson<T>(key: string, fallback: T): T {
   return fallback;
 }
 
-export function saveJson(key: string, value: unknown): void {
+export function saveJson(key: string, value: unknown): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
-    // 写入失败（配额超限等）静默处理
+    console.warn(`[storage] 无法保存 ${key}，可能已超出本地存储配额`);
+    return false;
   }
 }
 

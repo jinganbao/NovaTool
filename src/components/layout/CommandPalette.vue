@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Search, CornerDownLeft } from "lucide-vue-next";
+import { Search, CornerDownLeft, Star } from "lucide-vue-next";
 import { allTools } from "@/config/tools";
 import type { ToolKey } from "@/types/tools";
 import { useToolHistory } from "@/composables/useToolHistory";
@@ -10,7 +10,7 @@ const emit = defineEmits<{
   (e: "close"): void;
 }>();
 
-const { recent, favorites, recordUse } = useToolHistory();
+const { recent, favorites, toggleFavorite, isFavorite } = useToolHistory();
 const open = defineModel<boolean>("open", { required: true });
 const query = ref("");
 const inputRef = ref<HTMLInputElement | null>(null);
@@ -23,13 +23,13 @@ const results = computed(() => {
   const q = query.value.trim().toLowerCase();
   if (!q) {
     // 无搜索时：收藏 + 最近使用 + 所有工具
-    const favTools = favorites.map((key) => allTools.find((t) => t.key === key)).filter(Boolean);
-    const recentTools = recent
-      .filter((key) => !favorites.includes(key))
+    const favTools = favorites.value.map((key) => allTools.find((t) => t.key === key)).filter(Boolean);
+    const recentTools = recent.value
+      .filter((key) => !favorites.value.includes(key))
       .map((key) => allTools.find((t) => t.key === key))
       .filter(Boolean);
     const others = allTools.filter(
-      (t) => !favorites.includes(t.key) && !recent.includes(t.key),
+      (t) => !favorites.value.includes(t.key) && !recent.value.includes(t.key),
     );
     return [
       ...favTools.map((t) => ({ ...t!, section: "收藏" })),
@@ -56,7 +56,6 @@ function selectItem(index: number) {
   const flat = results.value;
   if (index >= 0 && index < flat.length) {
     const tool = flat[index];
-    recordUse(tool.key);
     emit("select", tool.key);
     query.value = "";
     open.value = false;
@@ -170,17 +169,28 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
       <div class="palette-list">
         <template v-for="([sectionName, items], secIdx) in sections" :key="sectionName">
           <div class="palette-section-label">{{ sectionName }}</div>
-          <button
+          <div
             v-for="(item, itemIdx) in items"
             :key="item.key"
             class="palette-item"
             :class="{ active: activeIndex === getFlatIndex(secIdx, itemIdx) }"
-            @click="selectItem(getFlatIndex(secIdx, itemIdx))"
           >
-            <component :is="item.icon" :size="16" />
-            <span class="palette-item-title">{{ item.title }}</span>
-            <span class="palette-item-desc">{{ item.desc }}</span>
-          </button>
+            <button class="palette-item-main" type="button" @click="selectItem(getFlatIndex(secIdx, itemIdx))">
+              <component :is="item.icon" :size="16" />
+              <span class="palette-item-title">{{ item.title }}</span>
+              <span class="palette-item-desc">{{ item.desc }}</span>
+            </button>
+            <button
+              class="favorite-btn"
+              :class="{ selected: isFavorite(item.key) }"
+              type="button"
+              :aria-label="isFavorite(item.key) ? `取消收藏 ${item.title}` : `收藏 ${item.title}`"
+              :title="isFavorite(item.key) ? '取消收藏' : '收藏'"
+              @click="toggleFavorite(item.key)"
+            >
+              <Star :size="14" :fill="isFavorite(item.key) ? 'currentColor' : 'none'" />
+            </button>
+          </div>
         </template>
         <div v-if="results.length === 0" class="palette-empty">
           未找到匹配的工具
@@ -301,16 +311,9 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
 .palette-item {
   display: flex;
   align-items: center;
-  gap: 10px;
   width: 100%;
-  padding: 8px 10px;
-  border: none;
   border-radius: 6px;
   background: none;
-  color: var(--text-primary);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
 }
 
 .palette-item.active,
@@ -318,7 +321,39 @@ function getFlatIndex(sectionIdx: number, itemIdx: number) {
   background: var(--brand-soft);
 }
 
-.palette-item.active > svg {
+.palette-item-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette-item.active .palette-item-main > svg {
+  color: var(--brand);
+}
+
+.favorite-btn {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.favorite-btn:hover,
+.favorite-btn.selected {
   color: var(--brand);
 }
 

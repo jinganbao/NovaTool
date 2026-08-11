@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NModal, NSpace, NText, NInputNumber, NSelect } from "naive-ui";
+import { NInputNumber, NModal, NSelect, NSpace, NSwitch, NText } from "naive-ui";
 import { themeModeOptions, themePresets } from "@/config/theme";
 import { allTools } from "@/config/tools";
 import { useConfig } from "@/composables/useConfig";
@@ -14,8 +14,7 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
 </script>
 
 <template>
-  <!-- ====== 配置弹窗 ====== -->
-  <n-modal v-model:show="show" preset="card" title="配置" class="nova-modal" style="max-width: 520px; width: 90vw">
+  <n-modal v-model:show="show" preset="card" title="设置" class="nova-modal" style="max-width: 520px; width: 90vw">
     <n-space vertical :size="16">
       <div class="config-modal-row">
         <n-text class="config-modal-label">主题色</n-text>
@@ -73,6 +72,12 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
           :step="1"
         />
       </div>
+
+      <div class="config-modal-row">
+        <n-text class="config-modal-label">自动更新</n-text>
+        <n-switch v-model:value="config.autoCheckUpdate" size="small" />
+        <n-text depth="3" class="config-modal-hint">启动时静默检查新版本</n-text>
+      </div>
     </n-space>
   </n-modal>
 
@@ -94,6 +99,10 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
   width: 100px;
   font-size: 13px;
   flex-shrink: 0;
+}
+
+.config-modal-hint {
+  font-size: 12px;
 }
 
 .theme-picker {

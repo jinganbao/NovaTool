@@ -1,4 +1,4 @@
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import type { ToolKey } from "@/types/tools";
 import { loadJson, saveJson } from "@/utils/storage";
 
@@ -34,8 +34,8 @@ export function useToolHistory() {
   }
 
   return {
-    recent: state.value.recent,
-    favorites: state.value.favorites,
+    recent: computed(() => state.value.recent),
+    favorites: computed(() => state.value.favorites),
     recordUse,
     toggleFavorite,
     isFavorite,

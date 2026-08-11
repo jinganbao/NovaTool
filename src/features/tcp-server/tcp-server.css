@@ -1,0 +1,260 @@
+/* ---- 整体 ---- */
+.tool-panel {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.tcp-server {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+/* ---- 连接栏 ---- */
+.conn-bar {
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.conn-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.field {
+  flex: 1 1 100px;
+  min-width: 100px;
+  display: grid;
+  gap: 4px;
+}
+
+.field-tight {
+  flex: 0.8 1 120px;
+  min-width: 120px;
+}
+
+.field-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.field-auto {
+  flex: 1 1 200px;
+  min-width: 200px;
+  grid-auto-flow: column;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-items: start;
+}
+
+.field-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.conn-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.client-count {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.client-count strong {
+  color: var(--brand);
+}
+
+/* ---- 客户端条（横向小标签） ---- */
+.client-strip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  padding: 6px 10px;
+}
+
+.strip-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.client-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+}
+
+.client-addr-short {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.client-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+
+.client-tag-active {
+  outline: 1px solid var(--brand);
+  background: var(--brand-soft);
+}
+
+.client-kick-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.client-kick-btn:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.server-send-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.send-client-select {
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.send-mode {
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.send-text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- 日志区：独占全部剩余空间 ---- */
+.log-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  padding: 10px;
+}
+
+.section-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.section-title {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.display-mode {
+  width: 72px;
+}
+
+.log-view {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.log-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--bg-input);
+  font-size: 13px;
+}
+
+/* ---- 按钮微调 ---- */
+:deep(.n-button) {
+  height: 28px;
+  font-size: 12px;
+}
+
+/* ---- 响应式 ---- */
+@media (max-width: 700px) {
+  .conn-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+

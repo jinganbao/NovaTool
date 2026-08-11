@@ -3,6 +3,7 @@ import { computed, h, onBeforeUnmount, onMounted, ref, watch, defineAsyncCompone
 import { Loader2 } from "lucide-vue-next";
 import { useMessage } from "naive-ui";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isTauri } from "@tauri-apps/api/core";
 import { allTools } from "@/config/tools";
 import { getThemeVars } from "@/config/theme";
 import { useConfig, resolvedThemeMode } from "@/composables/useConfig";
@@ -73,6 +74,7 @@ const showAboutModal = ref(false);
 let unlistenMenu: UnlistenFn | null = null;
 
 onMounted(async () => {
+  if (!isTauri()) return;
   // 菜单「检查更新…」/「关于 NovaTool…」
   unlistenMenu = await listen("novatool-check-update", () => {
     void checkForUpdates();
@@ -123,13 +125,13 @@ watch(activeTool, () => {
     <AppIconBar
       :active-tool="activeTool"
       @update:active-tool="selectTool"
+      @settings="showSettings = true"
     />
 
     <main class="workspace">
       <WorkspaceHeader
         :tool="currentTool"
         @command="showPalette = true"
-        @settings="showSettings = true"
       />
 
       <ErrorBoundary ref="errorBoundaryRef">

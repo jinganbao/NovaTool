@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { NButton, NSpace, useMessage } from "naive-ui";
-import { ArrowLeftRight, Copy, Eraser, GitCompare, Pencil } from "lucide-vue-next";
+import { NButton, useMessage } from "naive-ui";
+import { ArrowLeftRight, Copy, Eraser, GitCompare } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import CodeEditor, { type LineDecoration, type InlineMark } from "@/components/editor/CodeEditor.vue";
 import { useClipboard } from "@/composables/useClipboard";
 
-/* ---- 模式 ---- */
-type Mode = "edit" | "compare";
-const mode = ref<Mode>("edit");
+/* ---- 比较状态 ---- */
+const hasCompared = ref(false);
 const computing = ref(false);
+let editRevision = 0;
+let compareRequest = 0;
+let compareTimer: ReturnType<typeof setTimeout> | null = null;
 
 /* ---- 输入 ---- */
 const leftText = ref("Hello World\nThis is a test\nLine 3 original\nLine 4\nLine 5");
@@ -65,13 +67,17 @@ const message = useMessage();
 const { copyText } = useClipboard(message);
 
 /* ---- 调用 Rust 计算 diff ---- */
-async function compare() {
+async function compare(showError = true) {
+  const request = ++compareRequest;
+  const revision = editRevision;
   computing.value = true;
   try {
     const result = await invoke<DiffResult>("text_diff", {
       left: leftText.value,
       right: rightText.value,
     });
+
+    if (request !== compareRequest || revision !== editRevision) return;
 
     const toDecos = (marks: LineMark[], cls: string) =>
       marks.map((m) => ({ from: m.from, to: m.to, class: cls }));
@@ -101,19 +107,28 @@ async function compare() {
       removed: leftRemoved + leftChangedCount,
     };
 
-    mode.value = "compare";
+    hasCompared.value = true;
   } catch (err) {
-    message.error("Diff 计算失败：" + (err instanceof Error ? err.message : String(err)));
+    if (showError) message.error("Diff 计算失败：" + (err instanceof Error ? err.message : String(err)));
   } finally {
-    computing.value = false;
+    if (request === compareRequest) computing.value = false;
   }
 }
 
-function backToEdit() {
-  mode.value = "edit";
-  leftInlineMarks.value = [];
-  rightInlineMarks.value = [];
+function scheduleCompare() {
+  editRevision += 1;
+  if (!hasCompared.value) return;
+  if (compareTimer) clearTimeout(compareTimer);
+  compareTimer = setTimeout(() => {
+    compareTimer = null;
+    void compare(false);
+  }, 250);
 }
+
+watch([leftText, rightText], scheduleCompare);
+onBeforeUnmount(() => {
+  if (compareTimer) clearTimeout(compareTimer);
+});
 
 function swapTexts() {
   const tmp = leftText.value;
@@ -122,12 +137,19 @@ function swapTexts() {
 }
 
 function clearAll() {
+  if (compareTimer) {
+    clearTimeout(compareTimer);
+    compareTimer = null;
+  }
+  compareRequest += 1;
   leftText.value = "";
   rightText.value = "";
   leftMarks.value = [];
   rightMarks.value = [];
   leftInlineMarks.value = [];
   rightInlineMarks.value = [];
+  stats.value = { added: 0, removed: 0 };
+  hasCompared.value = false;
 }
 
 function copyDiff() {
@@ -165,88 +187,49 @@ function copyDiff() {
   <section class="tool-panel diff-tool">
     <!-- ====== 操作栏 ====== -->
     <div class="action-bar">
-      <n-space :size="8" align="center">
-        <n-button
-          v-if="mode === 'edit'"
-          size="small"
-          type="primary"
-          :loading="computing"
-          :render-icon="() => renderIcon(GitCompare)"
-          @click="compare"
-          >比较</n-button
-        >
-        <n-button
-          v-else
-          size="small"
-          secondary
-          :render-icon="() => renderIcon(Pencil)"
-          @click="backToEdit"
-          >返回编辑</n-button
-        >
+      <div class="action-group">
+        <n-button size="small" type="primary" :loading="computing" :render-icon="() => renderIcon(GitCompare)" @click="compare()">
+          {{ hasCompared ? "重新比较" : "比较" }}
+        </n-button>
         <n-button size="small" secondary :render-icon="() => renderIcon(ArrowLeftRight)" @click="swapTexts">交换</n-button>
-        <n-button
-          v-if="mode === 'compare'"
-          size="small"
-          secondary
-          :render-icon="() => renderIcon(Copy)"
-          @click="copyDiff"
-          >复制差异</n-button
-        >
+        <n-button size="small" secondary :disabled="!hasCompared" :render-icon="() => renderIcon(Copy)" @click="copyDiff">复制差异</n-button>
         <n-button size="small" secondary :render-icon="() => renderIcon(Eraser)" @click="clearAll">清空</n-button>
-        <span v-if="mode === 'compare'" class="stats">
+        <span v-if="hasCompared" class="stats">
           <span class="stat-added">+{{ stats.added }}</span>
           <span class="stat-removed">-{{ stats.removed }}</span>
         </span>
-      </n-space>
+      </div>
+      <span v-if="hasCompared" class="live-hint">编辑后自动更新差异</span>
     </div>
 
     <!-- ====== 主体 ====== -->
     <div class="main-area">
-      <!-- 编辑模式 -->
-      <template v-if="mode === 'edit'">
-        <div class="editor-pane">
-          <div class="pane-head">
-            <h2>原始文本</h2>
-            <n-button size="tiny" secondary :render-icon="() => renderIcon(Eraser)" @click="leftText = ''">清空</n-button>
-          </div>
-          <CodeEditor v-model="leftText" language="plain" placeholder="粘贴原始文本…" />
+      <div ref="leftRef" class="editor-pane" @scroll.capture="syncLeft">
+        <div class="pane-head">
+          <h2>原始文本</h2>
+          <n-button size="tiny" secondary :render-icon="() => renderIcon(Eraser)" @click="leftText = ''">清空</n-button>
         </div>
-        <div class="editor-pane">
-          <div class="pane-head">
-            <h2>修改后文本</h2>
-            <n-button size="tiny" secondary :render-icon="() => renderIcon(Eraser)" @click="rightText = ''">清空</n-button>
-          </div>
-          <CodeEditor v-model="rightText" language="plain" placeholder="粘贴修改后文本…" />
+        <CodeEditor
+          v-model="leftText"
+          language="plain"
+          placeholder="粘贴原始文本…"
+          :lineDecorations="leftMarks"
+          :inlineMarks="leftInlineMarks"
+        />
+      </div>
+      <div ref="rightRef" class="editor-pane" @scroll.capture="syncRight">
+        <div class="pane-head">
+          <h2>修改后文本</h2>
+          <n-button size="tiny" secondary :render-icon="() => renderIcon(Eraser)" @click="rightText = ''">清空</n-button>
         </div>
-      </template>
-
-      <!-- 对比模式：只读 CodeEditor + 行装饰 -->
-      <template v-else>
-        <div class="editor-pane" ref="leftRef" @scroll="syncLeft">
-          <div class="pane-head">
-            <h2>原始文本</h2>
-          </div>
-          <CodeEditor
-            :modelValue="leftText"
-            language="plain"
-            readonly
-            :lineDecorations="leftMarks"
-            :inlineMarks="leftInlineMarks"
-          />
-        </div>
-        <div class="editor-pane" ref="rightRef" @scroll="syncRight">
-          <div class="pane-head">
-            <h2>修改后文本</h2>
-          </div>
-          <CodeEditor
-            :modelValue="rightText"
-            language="plain"
-            readonly
-            :lineDecorations="rightMarks"
-            :inlineMarks="rightInlineMarks"
-          />
-        </div>
-      </template>
+        <CodeEditor
+          v-model="rightText"
+          language="plain"
+          placeholder="粘贴修改后文本…"
+          :lineDecorations="rightMarks"
+          :inlineMarks="rightInlineMarks"
+        />
+      </div>
     </div>
   </section>
 </template>
@@ -267,7 +250,15 @@ function copyDiff() {
 
 .action-bar {
   flex-shrink: 0;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
+
+.action-group { display: flex; align-items: center; gap: 8px; }
+.live-hint { color: var(--text-muted); font-size: 11px; }
 
 .stats {
   font-size: 12px;

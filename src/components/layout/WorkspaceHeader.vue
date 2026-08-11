@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Moon, Search, Settings, Sun } from "lucide-vue-next";
+import { Moon, Search, Sun } from "lucide-vue-next";
 import { NTooltip } from "naive-ui";
 import type { ToolItem } from "@/types/tools";
 import { useConfig, resolvedThemeMode } from "@/composables/useConfig";
@@ -8,7 +8,6 @@ import { useConfig, resolvedThemeMode } from "@/composables/useConfig";
 defineProps<{ tool: ToolItem }>();
 const emit = defineEmits<{
   command: [];
-  settings: [];
 }>();
 
 const config = useConfig();
@@ -70,14 +69,6 @@ async function onDragStart(e: MouseEvent) {
         {{ isDark ? "切换亮色" : "切换暗色" }}
       </n-tooltip>
 
-      <n-tooltip placement="bottom" :show-arrow="false">
-        <template #trigger>
-          <button class="action-btn icon-only" type="button" aria-label="配置" @click="emit('settings')">
-            <Settings :size="15" />
-          </button>
-        </template>
-        配置
-      </n-tooltip>
     </div>
   </header>
 </template>

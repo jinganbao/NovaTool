@@ -1,15 +1,15 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex, Notify};
 
-/// 推送到前端的日志事件
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerEvent {
     #[serde(rename = "type")]
     pub event_type: String,
@@ -24,12 +24,17 @@ pub struct ServerEvent {
     pub bytes: Option<usize>,
 }
 
-/// 服务器运行状态（Arc 包装，可安全移入 tokio::spawn）
+#[derive(Clone)]
+struct ClientHandle {
+    sender: mpsc::Sender<Vec<u8>>,
+    shutdown: broadcast::Sender<()>,
+}
+
 pub struct ServerState {
     running: Arc<AtomicBool>,
     shutdown_tx: Arc<Mutex<Option<broadcast::Sender<()>>>>,
-    // bounded channel：客户端消费过慢时发送端 try_send 失败，防止内存无限堆积
-    client_senders: Arc<Mutex<HashMap<String, tokio::sync::mpsc::Sender<Vec<u8>>>>>,
+    stopped: Arc<Notify>,
+    clients: Arc<Mutex<HashMap<String, ClientHandle>>>,
 }
 
 impl Default for ServerState {
@@ -37,13 +42,37 @@ impl Default for ServerState {
         Self {
             running: Arc::new(AtomicBool::new(false)),
             shutdown_tx: Arc::new(Mutex::new(None)),
-            client_senders: Arc::new(Mutex::new(HashMap::new())),
+            stopped: Arc::new(Notify::new()),
+            clients: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
-/// 启动 TCP 服务端：监听端口，多客户端管理，支持向客户端发送数据
-/// lan=true 时绑定 0.0.0.0（局域网可访问），默认仅本机 127.0.0.1
+const MAX_CONNECTIONS: usize = 128;
+const MAX_SEND_BYTES: usize = 1_000_000;
+
+fn emit_event(app: &AppHandle, event: ServerEvent) {
+    let _ = app.emit("tcp-server-event", event);
+}
+
+fn simple_event(event_type: &str, client_id: &str, addr: &str, message: String) -> ServerEvent {
+    ServerEvent {
+        event_type: event_type.into(),
+        client_id: client_id.into(),
+        addr: addr.into(),
+        message,
+        text: None,
+        hex: None,
+        bytes: None,
+    }
+}
+
+fn next_client_id() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    format!("Client-{}", COUNTER.fetch_add(1, Ordering::Relaxed) + 1)
+}
+
+/// 启动 TCP 服务端。lan=true 时绑定 0.0.0.0，默认仅本机访问。
 #[tauri::command]
 pub async fn tcp_server_start(
     app: AppHandle,
@@ -51,7 +80,11 @@ pub async fn tcp_server_start(
     port: u16,
     lan: Option<bool>,
 ) -> Result<(), String> {
-    if state.running.load(Ordering::SeqCst) {
+    if state
+        .running
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
         return Err("服务器已在运行中".into());
     }
 
@@ -60,224 +93,182 @@ pub async fn tcp_server_start(
     } else {
         format!("127.0.0.1:{}", port)
     };
-    let listener = TcpListener::bind(&bind_addr)
-        .await
-        .map_err(|e| format!("绑定端口失败: {}", e))?;
+    let listener = match TcpListener::bind(&bind_addr).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            state.running.store(false, Ordering::Release);
+            return Err(format!("绑定端口失败: {}", error));
+        }
+    };
 
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
     *state.shutdown_tx.lock().await = Some(shutdown_tx);
-    state.running.store(true, Ordering::SeqCst);
-
-    let running = state.running.clone();
-    let shutdown_guard = state.shutdown_tx.clone();
-
-    let _ = app.emit(
-        "tcp-server-event",
-        ServerEvent {
-            event_type: "info".into(),
-            client_id: "-".into(),
-            addr: "-".into(),
-            message: format!("服务器已启动，监听 {}", bind_addr),
-            text: None,
-            hex: None,
-            bytes: None,
-        },
+    emit_event(
+        &app,
+        simple_event(
+            "info",
+            "-",
+            "-",
+            format!("服务器已启动，监听 {}", bind_addr),
+        ),
     );
 
+    let running = state.running.clone();
+    let stopped = state.stopped.clone();
+    let clients = state.clients.clone();
     let app_handle = app.clone();
 
-    // 最大并发连接数限制
-    const MAX_CONNECTIONS: u32 = 128;
-    let active_connections = Arc::new(AtomicU32::new(0));
-    let server_senders = state.client_senders.clone();
-
     tokio::spawn(async move {
-        let mut client_counter: u32 = 0;
-
         loop {
             tokio::select! {
-                result = listener.accept() => {
-                    match result {
-                        Ok((mut stream, addr)) => {
-                            // 检查连接数限制
-                            let current = active_connections.load(Ordering::SeqCst);
-                            if current >= MAX_CONNECTIONS {
-                                let _ = app_handle.emit("tcp-server-event", ServerEvent {
-                                    event_type: "error".into(),
-                                    client_id: "-".into(),
-                                    addr: addr.to_string(),
-                                    message: format!("连接数已达上限({})，拒绝新连接: {}", MAX_CONNECTIONS, addr),
-                                    text: None,
-                                    hex: None,
-                                    bytes: None,
-                                });
+                accepted = listener.accept() => {
+                    match accepted {
+                        Ok((stream, addr)) => {
+                            if clients.lock().await.len() >= MAX_CONNECTIONS {
+                                emit_event(&app_handle, simple_event(
+                                    "error", "-", &addr.to_string(),
+                                    format!("连接数已达上限({})，拒绝新连接", MAX_CONNECTIONS),
+                                ));
                                 continue;
                             }
 
-                            client_counter += 1;
-                            let client_id = format!("Client-{}", client_counter);
-                            let addr_str = addr.to_string();
-                            let app = app_handle.clone();
-                            let conn_counter = active_connections.clone();
-                            conn_counter.fetch_add(1, Ordering::SeqCst);
+                            let client_id = next_client_id();
+                            let addr_text = addr.to_string();
+                            let (sender, receiver) = mpsc::channel::<Vec<u8>>(256);
+                            let (client_shutdown, shutdown_receiver) = broadcast::channel::<()>(1);
+                            clients.lock().await.insert(
+                                client_id.clone(),
+                                ClientHandle { sender, shutdown: client_shutdown },
+                            );
+                            emit_event(&app_handle, simple_event(
+                                "connect", &client_id, &addr_text,
+                                format!("客户端已连接: {}", addr_text),
+                            ));
 
-                            let _ = app.emit("tcp-server-event", ServerEvent {
-                                event_type: "connect".into(),
-                                client_id: client_id.clone(),
-                                addr: addr_str.clone(),
-                                message: format!("客户端已连接: {}", addr_str),
-                                text: None,
-                                hex: None,
-                                bytes: None,
-                            });
-
-                            // 注册客户端发送通道（bounded，防内存无限堆积）
-                            let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
-                            server_senders.lock().await.insert(client_id.clone(), tx);
-
-                            // 每个客户端一个任务：读取 + 发送
-                            let ss = server_senders.clone();
-                            let app_clone = app.clone();
-                            let cid_clone = client_id.clone();
-                            let addr_clone = addr_str.clone();
-                            let conn_cnt = active_connections.clone();
-
-                            tokio::spawn(async move {
-                                let mut buf = [0u8; 8192];
-                                loop {
-                                    tokio::select! {
-                                        Some(data) = rx.recv() => {
-                                            use tokio::io::AsyncWriteExt;
-                                            if let Err(e) = stream.write_all(&data).await {
-                                                let _ = app_clone.emit("tcp-server-event", ServerEvent {
-                                                    event_type: "error".into(),
-                                                    client_id: cid_clone.clone(),
-                                                    addr: addr_clone.clone(),
-                                                    message: format!("发送失败: {}", e),
-                                                    text: None, hex: None, bytes: None,
-                                                });
-                                                // 发送失败说明连接已不可写：清理并结束该客户端任务
-                                                conn_cnt.fetch_sub(1, Ordering::SeqCst);
-                                                ss.lock().await.remove(&cid_clone);
-                                                let _ = app_clone.emit("tcp-server-event", ServerEvent {
-                                                    event_type: "disconnect".into(),
-                                                    client_id: cid_clone.clone(),
-                                                    addr: addr_clone.clone(),
-                                                    message: "连接已断开".into(),
-                                                    text: None, hex: None, bytes: None,
-                                                });
-                                                break;
-                                            } else {
-                                                let _ = app_clone.emit("tcp-server-event", ServerEvent {
-                                                    event_type: "server-send".into(),
-                                                    client_id: cid_clone.clone(),
-                                                    addr: addr_clone.clone(),
-                                                    message: format!("已发送 {} bytes", data.len()),
-                                                    text: Some(String::from_utf8_lossy(&data).to_string()),
-                                                    hex: Some(crate::utils::encode_hex(&data)),
-                                                    bytes: Some(data.len()),
-                                                });
-                                            }
-                                        }
-                                        result = stream.read(&mut buf) => {
-                                            match result {
-                                                Ok(0) => {
-                                                    conn_cnt.fetch_sub(1, Ordering::SeqCst);
-                                                    ss.lock().await.remove(&cid_clone);
-                                                    let _ = app_clone.emit("tcp-server-event", ServerEvent {
-                                                        event_type: "disconnect".into(),
-                                                        client_id: cid_clone.clone(),
-                                                        addr: addr_clone.clone(),
-                                                        message: "客户端已断开".into(),
-                                                        text: None, hex: None, bytes: None,
-                                                    });
-                                                    break;
-                                                }
-                                                Ok(n) => {
-                                                    let chunk = &buf[..n];
-                                                    let _ = app_clone.emit("tcp-server-event", ServerEvent {
-                                                        event_type: "data".into(),
-                                                        client_id: cid_clone.clone(),
-                                                        addr: addr_clone.clone(),
-                                                        message: String::from_utf8_lossy(chunk).to_string(),
-                                                        text: Some(String::from_utf8_lossy(chunk).to_string()),
-                                                        hex: Some(chunk.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ")),
-                                                        bytes: Some(n),
-                                                    });
-                                                }
-                                                Err(_) => {
-                                                    conn_cnt.fetch_sub(1, Ordering::SeqCst);
-                                                    ss.lock().await.remove(&cid_clone);
-                                                    let _ = app_clone.emit("tcp-server-event", ServerEvent {
-                                                        event_type: "disconnect".into(),
-                                                        client_id: cid_clone.clone(),
-                                                        addr: addr_clone.clone(),
-                                                        message: "连接异常断开".into(),
-                                                        text: None, hex: None, bytes: None,
-                                                    });
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            });
+                            spawn_client_task(
+                                app_handle.clone(),
+                                clients.clone(),
+                                client_id,
+                                addr_text,
+                                stream,
+                                receiver,
+                                shutdown_receiver,
+                            );
                         }
-                        Err(e) => {
-                            let _ = app_handle.emit("tcp-server-event", ServerEvent {
-                                event_type: "error".into(),
-                                client_id: "-".into(),
-                                addr: "-".into(),
-                                message: format!("接受连接失败: {}", e),
-                                text: None,
-                                hex: None,
-                                bytes: None,
-                            });
-                        }
+                        Err(error) => emit_event(&app_handle, simple_event(
+                            "error", "-", "-", format!("接受连接失败: {}", error),
+                        )),
                     }
                 }
-                _ = shutdown_rx.recv() => {
-                    break;
-                }
+                _ = shutdown_rx.recv() => break,
             }
         }
 
-        running.store(false, Ordering::SeqCst);
-        // shutdown_tx 的 Arc 引用在这里自动 drop，stop 命令能检测到 None
-        drop(shutdown_guard);
-        let _ = app_handle.emit(
-            "tcp-server-event",
-            ServerEvent {
-                event_type: "info".into(),
-                client_id: "-".into(),
-                addr: "-".into(),
-                message: "服务器已停止".into(),
-                text: None,
-                hex: None,
-                bytes: None,
-            },
+        running.store(false, Ordering::Release);
+        emit_event(
+            &app_handle,
+            simple_event("info", "-", "-", "服务器已停止".into()),
         );
+        stopped.notify_waiters();
     });
 
     Ok(())
 }
 
-/// 停止 TCP 服务端
-#[tauri::command]
-pub async fn tcp_server_stop(state: tauri::State<'_, ServerState>) -> Result<(), String> {
-    let mut guard = state.shutdown_tx.lock().await;
-    if let Some(tx) = guard.take() {
-        let _ = tx.send(());
-        state.running.store(false, Ordering::SeqCst);
-        // 清空客户端发送通道
-        state.client_senders.lock().await.clear();
-        Ok(())
-    } else {
-        Err("服务器未在运行".into())
-    }
+#[allow(clippy::too_many_arguments)]
+fn spawn_client_task(
+    app: AppHandle,
+    clients: Arc<Mutex<HashMap<String, ClientHandle>>>,
+    client_id: String,
+    addr: String,
+    mut stream: tokio::net::TcpStream,
+    mut receiver: mpsc::Receiver<Vec<u8>>,
+    mut shutdown: broadcast::Receiver<()>,
+) {
+    tokio::spawn(async move {
+        let mut buffer = [0_u8; 8192];
+        let disconnect_message = loop {
+            tokio::select! {
+                outgoing = receiver.recv() => {
+                    let Some(data) = outgoing else {
+                        break "连接已关闭";
+                    };
+                    if let Err(error) = stream.write_all(&data).await {
+                        emit_event(&app, simple_event(
+                            "error", &client_id, &addr, format!("发送失败: {}", error),
+                        ));
+                        break "连接异常断开";
+                    }
+                    emit_event(&app, ServerEvent {
+                        event_type: "server-send".into(),
+                        client_id: client_id.clone(),
+                        addr: addr.clone(),
+                        message: format!("已发送 {} bytes", data.len()),
+                        text: Some(String::from_utf8_lossy(&data).to_string()),
+                        hex: Some(crate::utils::encode_hex(&data)),
+                        bytes: Some(data.len()),
+                    });
+                }
+                result = stream.read(&mut buffer) => {
+                    match result {
+                        Ok(0) => break "客户端已断开",
+                        Ok(size) => {
+                            let chunk = &buffer[..size];
+                            emit_event(&app, ServerEvent {
+                                event_type: "data".into(),
+                                client_id: client_id.clone(),
+                                addr: addr.clone(),
+                                message: String::from_utf8_lossy(chunk).to_string(),
+                                text: Some(String::from_utf8_lossy(chunk).to_string()),
+                                hex: Some(crate::utils::encode_hex(chunk)),
+                                bytes: Some(size),
+                            });
+                        }
+                        Err(_) => break "连接异常断开",
+                    }
+                }
+                _ = shutdown.recv() => break "连接已关闭",
+            }
+        };
+
+        let _ = stream.shutdown().await;
+        clients.lock().await.remove(&client_id);
+        emit_event(
+            &app,
+            simple_event(
+                "disconnect",
+                &client_id,
+                &addr,
+                disconnect_message.into(),
+            ),
+        );
+    });
 }
 
-/// 向指定客户端发送数据（mode="hex" 时按 HEX 字符串解码后发送）
+/// 停止监听并关闭所有已建立客户端连接；返回前确保监听任务已退出。
+#[tauri::command]
+pub async fn tcp_server_stop(state: tauri::State<'_, ServerState>) -> Result<(), String> {
+    let stopped = state.stopped.notified();
+    let tx = state
+        .shutdown_tx
+        .lock()
+        .await
+        .take()
+        .ok_or_else(|| "服务器未在运行".to_string())?;
+
+    let handles = {
+        let mut clients = state.clients.lock().await;
+        clients.drain().map(|(_, handle)| handle).collect::<Vec<_>>()
+    };
+    for handle in handles {
+        let _ = handle.shutdown.send(());
+    }
+    let _ = tx.send(());
+    stopped.await;
+    Ok(())
+}
+
+/// 向指定客户端发送数据。
 #[tauri::command]
 pub async fn tcp_server_send(
     state: tauri::State<'_, ServerState>,
@@ -285,38 +276,45 @@ pub async fn tcp_server_send(
     data: String,
     mode: Option<String>,
 ) -> Result<(), String> {
-    // 单次发送上限（1MB），防止超大 payload 堆积内存
-    const MAX_SEND_BYTES: usize = 1_000_000;
-    if data.len() > MAX_SEND_BYTES {
+    if data.len() > MAX_SEND_BYTES * 3 {
         return Err(format!("发送数据过大（上限 {} 字节）", MAX_SEND_BYTES));
     }
-
     let bytes = if mode.as_deref() == Some("hex") {
         crate::utils::decode_hex(&data)?
     } else {
         data.into_bytes()
     };
-
-    let senders = state.client_senders.lock().await;
-    if let Some(tx) = senders.get(&client_id) {
-        // bounded channel 已满说明客户端消费过慢，拒绝本次发送避免内存堆积
-        tx.try_send(bytes)
-            .map_err(|_| "发送失败：客户端消费过慢或已断开".to_string())
-    } else {
-        Err(format!("客户端 {} 不存在", client_id))
+    if bytes.len() > MAX_SEND_BYTES {
+        return Err(format!("发送数据过大（上限 {} 字节）", MAX_SEND_BYTES));
     }
+
+    let sender = state
+        .clients
+        .lock()
+        .await
+        .get(&client_id)
+        .map(|handle| handle.sender.clone())
+        .ok_or_else(|| format!("客户端 {} 不存在", client_id))?;
+    sender
+        .try_send(bytes)
+        .map_err(|_| "发送失败：客户端消费过慢或已断开".to_string())
 }
 
-/// 断开指定客户端
+/// 关闭指定客户端的 socket，并由客户端任务统一发送断开事件和清理状态。
 #[tauri::command]
 pub async fn tcp_server_disconnect_client(
     state: tauri::State<'_, ServerState>,
     client_id: String,
 ) -> Result<(), String> {
-    let mut senders = state.client_senders.lock().await;
-    if senders.remove(&client_id).is_some() {
-        Ok(())
-    } else {
-        Err(format!("客户端 {} 不存在", client_id))
-    }
+    let handle = state
+        .clients
+        .lock()
+        .await
+        .remove(&client_id)
+        .ok_or_else(|| format!("客户端 {} 不存在", client_id))?;
+    handle
+        .shutdown
+        .send(())
+        .map(|_| ())
+        .map_err(|_| "客户端连接已结束".to_string())
 }

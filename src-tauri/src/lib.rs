@@ -46,8 +46,8 @@ pub fn run() {
             tcp_server::tcp_server_send,
             tcp_server::tcp_server_disconnect_client,
             text_diff::text_diff,
-            formatters::json_format,
-            formatters::xml_format,
+            formatters::json::json_format,
+            formatters::xml::xml_format,
             port_check::list_ports,
             port_check::kill_process,
             menu::open_url

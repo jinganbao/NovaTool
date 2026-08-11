@@ -1,374 +1,235 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { NButton, NInput, useMessage } from "naive-ui";
-import { Clock, Copy, RefreshCw } from "lucide-vue-next";
-import { renderIcon } from "@/utils/render";
-import { parseCron, nextRuns, describeCron, FIELD_DOCS, PRESETS } from "@/utils/cron";
+import { computed, reactive, ref } from "vue";
+import { NButton, NInput, NInputNumber, useMessage } from "naive-ui";
+import { Play, RotateCcw } from "lucide-vue-next";
+import CronFieldEditor from "@/features/cron/components/CronFieldEditor.vue";
+import CronRunsPanel from "@/features/cron/components/CronRunsPanel.vue";
+import { CRON_FIELDS, DEFAULT_QUARTZ_FIELDS, QUARTZ_PRESETS } from "@/features/cron/config";
+import {
+  describeQuartzCron,
+  fieldsToExpression,
+  nextQuartzRuns,
+  parseQuartzCron,
+} from "@/features/cron/quartzCron";
+import type { CronFieldKey, QuartzCronFields } from "@/features/cron/types";
 import { useClipboard } from "@/composables/useClipboard";
+import { renderIcon } from "@/utils/render";
 
-/* ---- 状态 ---- */
 const message = useMessage();
 const { copyText } = useClipboard(message);
 
-const expression = ref("0 9 * * 1-5");
-const runCount = ref("10");
+const activeField = ref<CronFieldKey>("second");
+const includeYear = ref(false);
+const fields = reactive<QuartzCronFields>({ ...DEFAULT_QUARTZ_FIELDS });
+const expressionDraft = ref(fieldsToExpression(fields, includeYear.value));
+const runCount = ref(10);
 
-/* ---- 计算 ---- */
-const parsed = computed(() => parseCron(expression.value));
-const isValid = computed(() => parsed.value !== null);
-const description = computed(() => (parsed.value ? describeCron(parsed.value) : ""));
-const runCountNum = computed(() => Math.max(1, Math.min(100, Number(runCount.value) || 10)));
+const parseResult = computed(() => parseQuartzCron(expressionDraft.value));
+const isValid = computed(() => parseResult.value.fields !== null);
+const description = computed(() => parseResult.value.fields ? describeQuartzCron(parseResult.value.fields) : "");
 const nextDates = computed(() => {
-  if (!parsed.value) return [];
+  if (!parseResult.value.fields) return [];
   try {
-    return nextRuns(parsed.value, runCountNum.value);
+    return nextQuartzRuns(parseResult.value.fields, runCount.value);
   } catch {
     return [];
   }
 });
 
-/* ---- 工具 ---- */
+function syncExpression() {
+  expressionDraft.value = fieldsToExpression(fields, includeYear.value);
+}
+
+function updateField(key: CronFieldKey, value: string) {
+  fields[key] = value.trim() || "*";
+  if (key === "dayOfMonth") {
+    if (fields.dayOfMonth !== "?") fields.dayOfWeek = "?";
+    else if (fields.dayOfWeek === "?") fields.dayOfWeek = "*";
+  }
+  if (key === "dayOfWeek") {
+    if (fields.dayOfWeek !== "?") fields.dayOfMonth = "?";
+    else if (fields.dayOfMonth === "?") fields.dayOfMonth = "*";
+  }
+  if (key === "year" && fields.year !== "*") includeYear.value = true;
+  syncExpression();
+}
+
+function applyExpression(showSuccess = true) {
+  const result = parseQuartzCron(expressionDraft.value);
+  if (!result.fields) {
+    message.error(result.error);
+    return;
+  }
+  Object.assign(fields, result.fields);
+  includeYear.value = expressionDraft.value.trim().split(/\s+/).length === 7;
+  syncExpression();
+  if (showSuccess) message.success("已反解析到字段编辑器");
+}
+
 function applyPreset(value: string) {
-  expression.value = value;
+  expressionDraft.value = value;
+  applyExpression(false);
 }
 
-function formatDate(d: Date) {
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  const s = String(d.getSeconds()).padStart(2, "0");
-  const week = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][d.getDay()];
-  return `${y}-${mo}-${day} ${h}:${mi}:${s} ${week}`;
+function calculate() {
+  if (!isValid.value) {
+    message.error(parseResult.value.error);
+    return;
+  }
+  message.success(`已计算最近 ${nextDates.value.length} 次运行时间`);
 }
 
-function copyAll() {
-  const text = nextDates.value.map((d, i) => `${i + 1}. ${formatDate(d)}`).join("\n");
-  void copyText(text);
+function formatDate(date: Date) {
+  const dateText = [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((value, index) => index === 0 ? String(value) : String(value).padStart(2, "0"))
+    .join("-");
+  const timeText = [date.getHours(), date.getMinutes(), date.getSeconds()]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+  return `${dateText} ${timeText}`;
+}
+
+function copyRuns() {
+  void copyText(nextDates.value.map((date, index) => `${index + 1}. ${formatDate(date)}`).join("\n"));
 }
 </script>
 
 <template>
-  <section class="tool-panel cron-tool">
-    <!-- ====== 表达式输入 ====== -->
-    <div class="expr-card">
-      <div class="card-head">
-        <h2>Cron 表达式</h2>
-      </div>
-      <div class="expr-row">
-        <n-input
-          v-model:value="expression"
-          size="small"
-          placeholder="输入 Cron 表达式，如 0 9 * * 1-5"
-          class="expr-input"
-          :status="expression && !isValid ? 'error' : undefined"
-        />
-        <span class="show-count">显示</span>
-        <n-input
-          v-model:value="runCount"
-          size="small"
-          class="count-input"
-          placeholder="10"
-        />
-        <span class="show-count">次</span>
-      </div>
-      <div v-if="isValid && description" class="expr-desc">
-        <Clock :size="14" />
-        <span>{{ description }}</span>
-      </div>
-      <div v-else-if="expression && !isValid" class="expr-error">表达式格式不正确，请检查</div>
-    </div>
-
-    <!-- ====== 常用预设 ====== -->
-    <div class="preset-card">
-      <div class="card-head">
-        <h2>常用示例</h2>
-      </div>
-      <div class="preset-grid">
+  <section class="cron-tool">
+    <section class="builder-panel">
+      <div class="field-tabs" role="tablist" aria-label="Cron 字段">
         <button
-          v-for="p in PRESETS"
-          :key="p.value"
-          class="preset-chip"
-          :class="{ active: expression === p.value }"
+          v-for="field in CRON_FIELDS"
+          :key="field.key"
           type="button"
-          @click="applyPreset(p.value)"
+          role="tab"
+          :aria-selected="activeField === field.key"
+          :class="{ active: activeField === field.key }"
+          @click="activeField = field.key"
         >
-          {{ p.label }}
+          {{ field.label }}
         </button>
       </div>
-    </div>
 
-    <!-- ====== 字段说明 + 下次执行 ====== -->
-    <div class="bottom-area">
-      <!-- 字段说明 -->
-      <div class="fields-card">
-        <div class="card-head">
-          <h2>字段说明</h2>
+      <CronFieldEditor
+        :key="activeField"
+        :field-key="activeField"
+        :model-value="fields[activeField]"
+        @update:model-value="updateField(activeField, $event)"
+      />
+    </section>
+
+    <section class="expression-panel">
+      <header class="section-head compact">
+        <div>
+          <h2>表达式</h2>
+          <span>修改字段或输入完整表达式</span>
         </div>
-        <div class="field-list">
-          <div v-for="f in FIELD_DOCS" :key="f.name" class="field-row">
-            <span class="field-name">{{ f.name }}</span>
-            <code class="field-range">{{ f.range }}</code>
-            <span class="field-desc">{{ f.desc }}</span>
-          </div>
-        </div>
+      </header>
+
+      <div class="field-values">
+        <label v-for="field in CRON_FIELDS" :key="field.key">
+          <span>{{ field.label }}</span>
+          <n-input
+            :value="fields[field.key]"
+            size="small"
+            :placeholder="field.key === 'year' ? '可选' : '*'"
+            @update:value="updateField(field.key, $event)"
+          />
+        </label>
       </div>
 
-      <!-- 下次执行 -->
-      <div class="runs-card">
-        <div class="card-head">
-          <h2>下次执行时间</h2>
-          <n-button size="tiny" secondary :render-icon="() => renderIcon(Copy)" :disabled="nextDates.length === 0" @click="copyAll">复制全部</n-button>
-        </div>
-        <div v-if="!isValid" class="runs-empty">
-          <RefreshCw :size="20" />
-          <span>输入合法表达式查看结果</span>
-        </div>
-        <div v-else class="runs-list">
-          <div v-for="(d, i) in nextDates" :key="i" class="run-row">
-            <span class="run-num">{{ i + 1 }}</span>
-            <code class="run-time">{{ formatDate(d) }}</code>
-          </div>
-          <div v-if="nextDates.length === 0" class="runs-empty">
-            <span>未来 5 年内无匹配</span>
-          </div>
-        </div>
+      <div class="expression-row">
+        <n-input
+          v-model:value="expressionDraft"
+          size="small"
+          class="expression-input"
+          :status="expressionDraft && !isValid ? 'error' : undefined"
+          placeholder="0 0 9 ? * 2-6"
+          @keyup.enter="applyExpression()"
+        />
+        <n-input-number
+          v-model:value="runCount"
+          size="small"
+          :min="1"
+          :max="50"
+          :show-button="false"
+          class="count-input"
+        />
+        <span class="count-unit">次</span>
+        <n-button size="small" secondary :render-icon="() => renderIcon(RotateCcw)" @click="applyExpression()">反解析</n-button>
+        <n-button size="small" type="primary" :render-icon="() => renderIcon(Play)" @click="calculate">计算</n-button>
       </div>
+
+      <div v-if="isValid" class="validation valid"><span class="status-dot" />{{ description }}</div>
+      <div v-else class="validation invalid">{{ parseResult.error }}</div>
+    </section>
+
+    <div class="output-area">
+      <section class="preset-panel">
+        <header class="section-head compact">
+          <div><h2>常用模板</h2><span>Quartz 表达式</span></div>
+        </header>
+        <div class="preset-list">
+          <button
+            v-for="preset in QUARTZ_PRESETS"
+            :key="preset.value"
+            type="button"
+            :class="{ active: expressionDraft === preset.value }"
+            @click="applyPreset(preset.value)"
+          >
+            <span>{{ preset.label }}</span>
+            <code>{{ preset.value }}</code>
+          </button>
+        </div>
+      </section>
+
+      <CronRunsPanel :dates="nextDates" :valid="isValid" @copy="copyRuns" />
     </div>
   </section>
 </template>
 
 <style scoped>
-.tool-panel {
-  flex: 1;
-  min-height: 0;
-  box-sizing: border-box;
-}
-
-.cron-tool {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-}
-
-/* ---- 公共卡片 ---- */
-.card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.card-head h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-/* ---- 表达式输入 ---- */
-.expr-card {
-  flex-shrink: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  padding: 12px;
-}
-
-.expr-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.expr-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.count-input {
-  width: 56px;
-  flex-shrink: 0;
-}
-
-.show-count {
-  color: var(--text-muted);
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-.expr-desc {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 8px 10px;
-  border-radius: 5px;
-  background: var(--success-soft, rgba(74, 222, 128, 0.1));
-  color: var(--success);
-  font-size: 13px;
-}
-
-.expr-error {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border-radius: 5px;
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: 13px;
-}
-
-/* ---- 常用预设 ---- */
-.preset-card {
-  flex-shrink: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  padding: 12px;
-}
-
-.preset-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.preset-chip {
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 5px;
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.preset-chip:hover {
-  border-color: var(--brand);
-  color: var(--text-primary);
-}
-
-.preset-chip.active {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: #fff;
-  font-weight: 600;
-}
-
-/* ---- 底部双栏 ---- */
-.bottom-area {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
-}
-
-/* ---- 字段说明 ---- */
-.fields-card {
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  padding: 12px;
-}
-
-.field-list {
-  display: grid;
-  gap: 6px;
-}
-
-.field-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 5px;
-  background: var(--bg-input);
-  font-size: 12px;
-}
-
-.field-name {
-  width: 36px;
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.field-range {
-  width: 48px;
-  color: var(--brand);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-}
-
-.field-desc {
-  color: var(--text-muted);
-}
-
-/* ---- 下次执行 ---- */
-.runs-card {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--bg-panel);
-  padding: 12px;
-}
-
-.runs-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.runs-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: grid;
-  gap: 4px;
-}
-
-.run-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border-radius: 5px;
-  background: var(--bg-input);
-}
-
-.run-num {
-  width: 20px;
-  color: var(--text-muted);
-  font-size: 11px;
-  text-align: right;
-}
-
-.run-time {
-  font-size: 12px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  color: var(--text-primary);
-}
-
-/* ---- 按钮微调 ---- */
-:deep(.n-button) {
-  height: 28px;
-  font-size: 12px;
-}
-
-@media (max-width: 700px) {
-  .bottom-area {
-    grid-template-columns: 1fr;
-  }
+.cron-tool { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto auto minmax(0, 1fr); border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-panel); }
+.builder-panel, .expression-panel { min-height: 0; padding: 8px 12px; }
+.builder-panel { border-bottom: 1px solid var(--border-subtle); }
+.expression-panel { border-bottom: 1px solid var(--border-subtle); }
+.section-head { min-height: 27px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+.section-head > div { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.section-head h2 { margin: 0; color: var(--text-primary); font-size: 13px; font-weight: 700; }
+.section-head span { color: var(--text-muted); font-size: 11px; }
+.section-head > code { padding: 3px 6px; border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--brand); background: var(--brand-soft); font-size: 10px; }
+.section-head.compact { min-height: 20px; margin-bottom: 5px; }
+.field-tabs { display: grid; grid-template-columns: repeat(7, minmax(72px, 1fr)); border-bottom: 1px solid var(--border-strong); margin-bottom: 6px; }
+.field-tabs button { height: 27px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer; }
+.field-tabs button:hover { color: var(--text-primary); background: var(--bg-hover); }
+.field-tabs button.active { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.field-tabs button:focus { outline: none; }
+.field-tabs button:focus-visible { box-shadow: inset 0 0 0 1px var(--brand); }
+.field-values { display: grid; grid-template-columns: repeat(7, minmax(72px, 1fr)); gap: 8px; }
+.field-values label { min-width: 0; display: grid; gap: 4px; }
+.field-values label > span { color: var(--text-muted); font-size: 10px; line-height: 1; }
+.field-values label:focus-within > span { color: var(--brand); }
+.expression-row { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+.expression-input { flex: 1; min-width: 0; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+.count-input { width: 58px; flex-shrink: 0; }
+.count-unit { min-width: 12px; flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
+.validation { min-height: 21px; display: flex; align-items: center; gap: 7px; margin-top: 5px; padding: 0 8px; border-radius: 4px; font-size: 11px; }
+.validation.valid { color: var(--success); background: var(--success-soft); }
+.validation.invalid { color: var(--danger); background: var(--danger-soft); }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.output-area { min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(260px, 0.72fr) minmax(380px, 1.28fr); padding: 8px 12px; }
+.preset-panel { min-height: 0; display: flex; flex-direction: column; padding-right: 14px; }
+.preset-list { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 4px; }
+.preset-list button { min-width: 0; min-height: 31px; display: grid; align-content: center; gap: 1px; padding: 3px 7px; border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--bg-input); text-align: left; cursor: pointer; }
+.preset-list button:hover, .preset-list button.active { border-color: var(--brand); background: var(--brand-soft); }
+.preset-list span { color: var(--text-secondary); font-size: 11px; }
+.preset-list code { overflow: hidden; color: var(--text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 900px) {
+  .cron-tool { overflow-y: auto; display: flex; }
+  .field-tabs, .field-values { grid-template-columns: repeat(4, minmax(72px, 1fr)); }
+  .output-area { grid-template-columns: 1fr; gap: 14px; }
+  .preset-panel { padding-right: 0; }
+  :deep(.runs-panel) { border-left: 0; border-top: 1px solid var(--border-subtle); padding: 12px 0 0; }
 }
 </style>

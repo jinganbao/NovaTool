@@ -49,11 +49,11 @@ export const toolGroups: ToolGroup[] = [
     title: "编码转换",
     icon: TextCursorInput,
     tools: [
-      { key: "url-codec", title: "URL 编解码", desc: "常用字符串转义", icon: Wand2, status: "ready" },
-      { key: "timestamp", title: "时间戳转换", desc: "秒、毫秒与日期互转", icon: TerminalSquare, status: "ready" },
-      { key: "base64", title: "Base64 编解码", desc: "文本与 Base64 互转", icon: Binary, status: "ready" },
-      { key: "radix", title: "进制转换", desc: "二/八/十/十六进制互转", icon: ArrowLeftRight, status: "ready" },
-      { key: "hash", title: "哈希计算", desc: "MD5 · SHA-1/256/512 · SM3", icon: Hash, status: "ready" },
+      { key: "url-codec", title: "URL 编解码", desc: "URI、参数值与表单编码", icon: Wand2, status: "ready" },
+      { key: "timestamp", title: "时间戳转换", desc: "Epoch 多精度、日期与时区转换", icon: TerminalSquare, status: "ready" },
+      { key: "base64", title: "Base64 编解码", desc: "标准 Base64 与 Base64URL", icon: Binary, status: "ready" },
+      { key: "radix", title: "进制转换", desc: "任意精度二/八/十/十六进制", icon: ArrowLeftRight, status: "ready" },
+      { key: "hash", title: "哈希计算", desc: "WebAssembly MD5 · SHA · SM3", icon: Hash, status: "ready" },
     ],
   },
   {
@@ -62,7 +62,7 @@ export const toolGroups: ToolGroup[] = [
     icon: Sparkles,
     tools: [
       { key: "password", title: "密码生成", desc: "可配置长度与字符集", icon: KeyRound, status: "ready" },
-      { key: "cron", title: "Cron 表达式", desc: "解析、验证、下 N 次执行时间", icon: Clock, status: "ready" },
+      { key: "cron", title: "Cron 表达式", desc: "Quartz 6/7 字段生成、解析与运行时间", icon: Clock, status: "ready" },
       { key: "qrcode", title: "二维码生成", desc: "文本/URL 转二维码，支持下载", icon: QrCode, status: "ready" },
       { key: "uuid", title: "UUID 生成", desc: "v4/v7/NIL，批量生成", icon: Fingerprint, status: "ready" },
     ],
