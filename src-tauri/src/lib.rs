@@ -6,6 +6,7 @@ mod tcp_server;
 mod text_diff;
 mod utils;
 
+#[cfg(target_os = "macos")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(target_os = "macos")]
