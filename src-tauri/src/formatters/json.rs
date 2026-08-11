@@ -24,6 +24,7 @@ pub fn json_format(input: String, mode: String) -> Result<String, String> {
 /// 1. 整体是 JSON 字符串字面量且内容本身是 JSON 对象/数组（如 `"{\"a\":1}"`，
 ///    从代码/日志复制的）→ 展开为真实对象/数组再格式化；
 /// 2. 字符串外的裸转义引号（如 `{\"a\":1}`）→ 还原 `\"`/`\\` 后重新解析。
+///
 /// 其余情况保持原行为；解析失败时报原始输入的错误（自带行列号）。
 fn parse_json_smart(input: &str) -> Result<serde_json::Value, String> {
     let value = serde_json::from_str::<serde_json::Value>(input).or_else(|_| {
@@ -68,9 +69,6 @@ fn unescape_escaped_json(s: &str) -> String {
     }
     out
 }
-
-/// XML 格式化/压缩：quick-xml 解析校验后重写，
-/// 完整保留 CDATA / 注释 / DOCTYPE / 处理指令，文本节点内容不变
 
 #[cfg(test)]
 mod tests {
@@ -219,4 +217,3 @@ mod tests {
         assert_eq!(out, r#"{"u":"\\u4e2d"}"#);
     }
 }
-

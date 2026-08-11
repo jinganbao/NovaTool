@@ -235,12 +235,7 @@ fn spawn_client_task(
         clients.lock().await.remove(&client_id);
         emit_event(
             &app,
-            simple_event(
-                "disconnect",
-                &client_id,
-                &addr,
-                disconnect_message.into(),
-            ),
+            simple_event("disconnect", &client_id, &addr, disconnect_message.into()),
         );
     });
 }
@@ -258,7 +253,10 @@ pub async fn tcp_server_stop(state: tauri::State<'_, ServerState>) -> Result<(),
 
     let handles = {
         let mut clients = state.clients.lock().await;
-        clients.drain().map(|(_, handle)| handle).collect::<Vec<_>>()
+        clients
+            .drain()
+            .map(|(_, handle)| handle)
+            .collect::<Vec<_>>()
     };
     for handle in handles {
         let _ = handle.shutdown.send(());

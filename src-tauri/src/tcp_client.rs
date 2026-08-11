@@ -330,7 +330,10 @@ mod tests {
 
     #[test]
     fn encode_payload_preserves_utf8_and_limits_size() {
-        assert_eq!(encode_payload("中文".into(), "utf8").unwrap(), "中文".as_bytes());
+        assert_eq!(
+            encode_payload("中文".into(), "utf8").unwrap(),
+            "中文".as_bytes()
+        );
         let oversized = "a".repeat(MAX_SEND_BYTES + 1);
         assert!(encode_payload(oversized, "utf8").is_err());
     }
