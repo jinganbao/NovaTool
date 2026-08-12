@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Hammer, Settings } from "lucide-vue-next";
+import { Settings } from "lucide-vue-next";
 import { NPopover, NTooltip } from "naive-ui";
+import appIcon from "@/assets/app-icon.png";
 import { toolGroups } from "@/config/tools";
 import type { ToolKey } from "@/types/tools";
 
@@ -30,7 +31,7 @@ function selectTool(key: ToolKey) {
 <template>
   <aside class="icon-bar" :class="{ mac: isMac }">
     <div class="brand-mark" title="NovaTool">
-      <Hammer :size="20" stroke-width="2.2" />
+      <img :src="appIcon" alt="" />
     </div>
 
     <nav class="group-nav" aria-label="工具分类">
@@ -123,10 +124,16 @@ function selectTool(key: ToolKey) {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  border-radius: 8px;
-  color: #fff;
-  background: var(--brand-gradient);
-  box-shadow: 0 2px 8px var(--shadow-strong);
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: 0 3px 10px var(--shadow-strong);
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .group-nav {
