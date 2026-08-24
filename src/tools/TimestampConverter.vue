@@ -8,6 +8,8 @@ import {
   dayOfYear,
   formatDateTimeInput,
   formatLocalDate,
+  formatLocalIso,
+  formatLocalRfc2822,
   formatOffset,
   formatUtcDate,
   parseDateTimeInput,
@@ -50,6 +52,7 @@ onBeforeUnmount(() => clearInterval(timer));
 
 const timestampInput = ref(dateToTimestampValues(initialNow).seconds);
 const timestampUnit = ref<TimestampUnitOption>("auto");
+const timestampOutputMode = ref<"local" | "utc">("local");
 const timestampResult = ref<ParsedTimestamp | null>(parseTimestamp(timestampInput.value, "auto"));
 const timestampError = ref("");
 
@@ -170,18 +173,28 @@ function changeDateTimeMode(mode: DateTimeMode) {
               已识别：{{ UNIT_LABELS[timestampResult.unit] }}
             </span>
           </div>
+          <div class="option-row">
+            <span>输出时区</span>
+            <div class="segmented" role="radiogroup" aria-label="结果时区">
+              <button type="button" role="radio" :aria-checked="timestampOutputMode === 'local'" :class="{ active: timestampOutputMode === 'local' }" @click="timestampOutputMode = 'local'">本地</button>
+              <button type="button" role="radio" :aria-checked="timestampOutputMode === 'utc'" :class="{ active: timestampOutputMode === 'utc' }" @click="timestampOutputMode = 'utc'">UTC</button>
+            </div>
+            <span v-if="timestampResult" class="detected">
+              {{ timestampOutputMode === "local" ? `${timezoneName} · ${formatOffset(timestampResult.date)}` : "UTC+00:00" }}
+            </span>
+          </div>
           <div v-if="timestampError" class="error-line">{{ timestampError }}</div>
         </div>
 
         <div v-if="timestampResult" class="result-block">
           <TimeValueRow label="日期时间" :value="formatLocalDate(timestampResult.date, false)" @copy="copyText" />
           <TimeValueRow label="UTC" :value="formatUtcDate(timestampResult.date)" @copy="copyText" />
-          <TimeValueRow label="ISO 8601" :value="timestampResult.date.toISOString()" @copy="copyText" />
-          <TimeValueRow label="RFC 2822" :value="timestampResult.date.toUTCString()" @copy="copyText" />
+          <TimeValueRow label="ISO 8601" :value="timestampOutputMode === 'local' ? formatLocalIso(timestampResult.date) : timestampResult.date.toISOString()" @copy="copyText" />
+          <TimeValueRow label="RFC 2822" :value="timestampOutputMode === 'local' ? formatLocalRfc2822(timestampResult.date) : timestampResult.date.toUTCString()" @copy="copyText" />
           <div class="result-meta">
             <span>{{ weekdayText(timestampResult.date) }}</span>
             <span>当年第 {{ dayOfYear(timestampResult.date) }} 天</span>
-            <span>{{ timezoneName }}</span>
+            <span>{{ timezoneName }} {{ formatOffset(timestampResult.date) }}</span>
           </div>
         </div>
       </section>

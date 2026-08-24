@@ -80,6 +80,29 @@ export function formatOffset(date: Date): string {
   return `UTC${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
 }
 
+/** 返回纯时区偏移，如 +08:00 / -05:00（不带 UTC 前缀） */
+export function offsetString(date: Date): string {
+  const offset = -date.getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const absolute = Math.abs(offset);
+  return `${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
+}
+
+/** 本地时区下的 ISO 8601，带偏移，如 2025-11-01T05:00:00+08:00 */
+export function formatLocalIso(date: Date): string {
+  const datePart = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const timePart = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return `${datePart}T${timePart}${offsetString(date)}`;
+}
+
+/** 本地时区下的 RFC 2822，带偏移，如 Fri, 01 Nov 2025 05:00:00 +0800 */
+export function formatLocalRfc2822(date: Date): string {
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getMonth()];
+  const offset = offsetString(date).replace(":", "");
+  return `${weekday}, ${pad(date.getDate())} ${month} ${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${offset}`;
+}
+
 export function formatDateTimeInput(date: Date, mode: DateTimeMode): string {
   const year = mode === "utc" ? date.getUTCFullYear() : date.getFullYear();
   const month = mode === "utc" ? date.getUTCMonth() + 1 : date.getMonth() + 1;

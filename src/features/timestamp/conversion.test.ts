@@ -3,9 +3,15 @@ import {
   dateToTimestampValues,
   detectTimestampUnit,
   formatDateTimeInput,
+  formatLocalIso,
+  formatLocalRfc2822,
+  offsetString,
   parseDateTimeInput,
   parseTimestamp,
 } from "./conversion";
+
+// 本地时区格式化依赖运行环境的时区，固定为 Asia/Shanghai 保证测试确定性
+process.env.TZ = "Asia/Shanghai";
 
 describe("timestamp precision", () => {
   it("按常见位数识别精度", () => {
@@ -48,5 +54,22 @@ describe("date time input", () => {
 
   it("拒绝不存在的日期", () => {
     expect(() => parseDateTimeInput("2026-02-30 12:00:00", "local")).toThrow();
+  });
+});
+
+describe("local timezone format", () => {
+  // 1761944400000 ms = 2025-10-31 21:00:00 UTC = 2025-11-01 05:00:00 (+08:00)
+  const date = new Date(1761944400000);
+
+  it("输出本地时区偏移（+08:00）", () => {
+    expect(offsetString(date)).toBe("+08:00");
+  });
+
+  it("ISO 8601 按本地时区带偏移输出", () => {
+    expect(formatLocalIso(date)).toBe("2025-11-01T05:00:00+08:00");
+  });
+
+  it("RFC 2822 按本地时区带偏移输出", () => {
+    expect(formatLocalRfc2822(date)).toBe("Sat, 01 Nov 2025 05:00:00 +0800");
   });
 });
