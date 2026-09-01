@@ -13,10 +13,12 @@ import AboutModal from "@/components/layout/AboutModal.vue";
 import AppIconBar from "@/components/layout/AppIconBar.vue";
 import CommandPalette from "@/components/layout/CommandPalette.vue";
 import ErrorBoundary from "@/components/layout/ErrorBoundary.vue";
+import HelpModal from "@/components/layout/HelpModal.vue";
 import SettingsModal from "@/components/layout/SettingsModal.vue";
 import UpdateModal from "@/components/layout/UpdateModal.vue";
 import WorkspaceHeader from "@/components/layout/WorkspaceHeader.vue";
 import { useToolHistory } from "@/composables/useToolHistory";
+import { loadVersionedJson, saveVersionedJson } from "@/utils/storage";
 
 /* ---- 异步加载工具组件，减少首屏包体积 ---- */
 const asyncOptions = {
@@ -32,6 +34,9 @@ const asyncOptions = {
 };
 
 const toolComponents: Partial<Record<ToolKey, Component>> = {
+  "data-query": defineAsyncComponent({ loader: () => import("@/tools/DataQuery.vue"), ...asyncOptions, errorComponent: ErrorBoundary }),
+  "http-client": defineAsyncComponent({ loader: () => import("@/tools/HttpClient.vue"), ...asyncOptions, errorComponent: ErrorBoundary }),
+  "udp-client": defineAsyncComponent({ loader: () => import("@/tools/UdpClient.vue"), ...asyncOptions, errorComponent: ErrorBoundary }),
   "json-format": defineAsyncComponent({ loader: () => import("@/tools/JsonFormatter.vue"), ...asyncOptions, errorComponent: ErrorBoundary }),
   "xml-format": defineAsyncComponent({ loader: () => import("@/tools/XmlFormatter.vue"), ...asyncOptions, errorComponent: ErrorBoundary }),
   "text-diff": defineAsyncComponent({ loader: () => import("@/tools/TextDiff.vue"), ...asyncOptions, errorComponent: ErrorBoundary }),
@@ -97,9 +102,17 @@ onBeforeUnmount(() => {
   unlistenMenu?.();
 });
 
-const activeTool = ref<ToolKey>((config.defaultTool as ToolKey) || "json-format");
+const workspaceState = loadVersionedJson("NovaTool-workspace", { activeTool: "" }, 1, (value) => {
+  const stored = value && typeof value === "object" ? value as { activeTool?: unknown } : {};
+  return { activeTool: typeof stored.activeTool === "string" ? stored.activeTool : "" };
+});
+const rememberedTool = allTools.some((tool) => tool.key === workspaceState.activeTool)
+  ? workspaceState.activeTool as ToolKey
+  : null;
+const activeTool = ref<ToolKey>(rememberedTool ?? (config.defaultTool as ToolKey) ?? "json-format");
 const showSettings = ref(false);
 const showPalette = ref(false);
+const showHelp = ref(false);
 
 const currentTool = computed<ToolItem>(() =>
   allTools.find((tool) => tool.key === activeTool.value) ?? allTools[0],
@@ -114,6 +127,10 @@ function selectTool(key: ToolKey) {
   recordUse(key);
 }
 
+watch(activeTool, (key) => {
+  saveVersionedJson("NovaTool-workspace", { activeTool: key }, 1);
+});
+
 // 切换工具时重置错误边界，避免上一个工具的错误遮挡新工具
 watch(activeTool, () => {
   errorBoundaryRef.value?.reset();
@@ -122,18 +139,21 @@ watch(activeTool, () => {
 
 <template>
   <div class="app-shell" :style="themeVars">
+    <WorkspaceHeader
+      class="workspace-header"
+      :tool="currentTool"
+      @command="showPalette = true"
+      @help="showHelp = true"
+    />
+
     <AppIconBar
+      class="workspace-rail"
       :active-tool="activeTool"
       @update:active-tool="selectTool"
       @settings="showSettings = true"
     />
 
     <main class="workspace">
-      <WorkspaceHeader
-        :tool="currentTool"
-        @command="showPalette = true"
-      />
-
       <ErrorBoundary ref="errorBoundaryRef">
         <KeepAlive>
           <component
@@ -147,6 +167,7 @@ watch(activeTool, () => {
     </main>
 
     <SettingsModal v-model:show="showSettings" />
+    <HelpModal v-model:show="showHelp" />
     <UpdateModal
       v-model:show="showUpdateModal"
       :checking="checkingUpdate"
@@ -170,13 +191,26 @@ watch(activeTool, () => {
   height: 100vh;
   min-width: 960px;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-columns: 56px minmax(0, 1fr);
   background: var(--bg-app);
   color: var(--text-primary);
   overflow: hidden;
 }
 
+.workspace-header {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.workspace-rail {
+  grid-column: 1;
+  grid-row: 2;
+}
+
 .workspace {
+  grid-column: 2;
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -185,7 +219,7 @@ watch(activeTool, () => {
 }
 
 .workspace :deep(.tool-panel) {
-  padding: 12px;
+  padding: 12px 14px 14px;
   flex: 1;
   min-height: 0;
 }

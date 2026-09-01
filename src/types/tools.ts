@@ -1,6 +1,9 @@
 import type { Component } from "vue";
 
 export type ToolKey =
+  | "data-query"
+  | "http-client"
+  | "udp-client"
   | "tcp-client"
   | "tcp-server"
   | "port-check"

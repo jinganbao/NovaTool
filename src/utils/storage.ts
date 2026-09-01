@@ -22,6 +22,30 @@ export function saveJson(key: string, value: unknown): boolean {
   }
 }
 
+export function loadVersionedJson<T>(
+  key: string,
+  fallback: T,
+  version: number,
+  migrate: (value: unknown, storedVersion: number) => T,
+): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as { version?: unknown; data?: unknown };
+    if (parsed && typeof parsed === "object" && "data" in parsed) {
+      const storedVersion = typeof parsed.version === "number" ? parsed.version : 0;
+      return migrate(parsed.data, storedVersion);
+    }
+    return migrate(parsed, 0);
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveVersionedJson(key: string, value: unknown, version: number): boolean {
+  return saveJson(key, { version, data: value });
+}
+
 let idCounter = 0;
 
 export function makeId(prefix = "id"): string {

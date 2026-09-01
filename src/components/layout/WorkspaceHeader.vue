@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Moon, Search, Sun } from "lucide-vue-next";
+import { CircleHelp, Moon, Search, Sun } from "lucide-vue-next";
 import { NTooltip } from "naive-ui";
 import type { ToolItem } from "@/types/tools";
 import { useConfig, resolvedThemeMode } from "@/composables/useConfig";
@@ -8,6 +8,7 @@ import { useConfig, resolvedThemeMode } from "@/composables/useConfig";
 defineProps<{ tool: ToolItem }>();
 const emit = defineEmits<{
   command: [];
+  help: [];
 }>();
 
 const config = useConfig();
@@ -69,6 +70,14 @@ async function onDragStart(e: MouseEvent) {
         {{ isDark ? "切换亮色" : "切换暗色" }}
       </n-tooltip>
 
+      <n-tooltip placement="bottom" :show-arrow="false">
+        <template #trigger>
+          <button class="action-btn icon-only" type="button" aria-label="快捷键与帮助" @click="emit('help')">
+            <CircleHelp :size="15" />
+          </button>
+        </template>
+        快捷键与帮助
+      </n-tooltip>
     </div>
   </header>
 </template>
@@ -81,7 +90,7 @@ async function onDragStart(e: MouseEvent) {
   justify-content: space-between;
   gap: 12px;
   height: 48px;
-  padding: 0 16px;
+  padding: 0 18px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-panel);
   z-index: 5;
@@ -89,6 +98,7 @@ async function onDragStart(e: MouseEvent) {
 
 /* macOS Overlay：红绿灯区域避让 */
 .top-bar.mac {
+  height: 56px;
   padding-left: 78px;
 }
 

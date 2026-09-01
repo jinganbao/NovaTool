@@ -67,10 +67,11 @@ export function formatLocalDate(date: Date, includeMilliseconds = true): string 
   return `${datePart} ${timePart}${includeMilliseconds ? `.${pad(date.getMilliseconds(), 3)}` : ""}`;
 }
 
-export function formatUtcDate(date: Date, includeMilliseconds = true): string {
+export function formatUtcDate(date: Date, includeMilliseconds = true, includeZone = true): string {
   const datePart = `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
   const timePart = `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
-  return `${datePart} ${timePart}${includeMilliseconds ? `.${pad(date.getUTCMilliseconds(), 3)}` : ""} UTC`;
+  const value = `${datePart} ${timePart}${includeMilliseconds ? `.${pad(date.getUTCMilliseconds(), 3)}` : ""}`;
+  return includeZone ? `${value} UTC` : value;
 }
 
 export function formatOffset(date: Date): string {

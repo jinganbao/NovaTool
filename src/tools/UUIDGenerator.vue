@@ -98,7 +98,7 @@ function copyOne(uuid: string) {
         <div v-for="(uuid, i) in uuids" :key="i" class="result-row">
           <span class="result-num">{{ i + 1 }}</span>
           <code class="result-uuid">{{ uuid }}</code>
-          <n-button size="tiny" quaternary :render-icon="() => renderIcon(Copy)" @click="copyOne(uuid)" />
+          <n-button size="tiny" quaternary aria-label="复制此 UUID" title="复制此 UUID" :render-icon="() => renderIcon(Copy)" @click="copyOne(uuid)" />
         </div>
       </div>
     </div>

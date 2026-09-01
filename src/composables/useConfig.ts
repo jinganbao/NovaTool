@@ -19,7 +19,7 @@ const defaults: AppConfig = {
   autoCheckUpdate: true,
 };
 
-function normalizeConfig(value: unknown): AppConfig {
+export function normalizeConfig(value: unknown): AppConfig {
   if (!value || typeof value !== "object") return { ...defaults };
   const stored = value as Partial<AppConfig>;
   const validTools = new Set<string>(allTools.map((tool) => tool.key));
@@ -102,5 +102,9 @@ watch(
 );
 
 export function useConfig() {
-  return config;
+  function resetConfig() {
+    Object.assign(config, defaults);
+  }
+
+  return Object.assign(config, { resetConfig });
 }

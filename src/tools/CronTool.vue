@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from "vue";
 import { NButton, NInput, NInputNumber, useMessage } from "naive-ui";
 import { Play, RotateCcw } from "lucide-vue-next";
+import { CronExpressionParser } from "cron-parser";
 import CronFieldEditor from "@/features/cron/components/CronFieldEditor.vue";
 import CronRunsPanel from "@/features/cron/components/CronRunsPanel.vue";
 import { CRON_FIELDS, DEFAULT_QUARTZ_FIELDS, QUARTZ_PRESETS } from "@/features/cron/config";
@@ -19,15 +20,31 @@ const message = useMessage();
 const { copyText } = useClipboard(message);
 
 const activeField = ref<CronFieldKey>("second");
+const cronMode = ref<"quartz" | "unix">("quartz");
+const unixExpression = ref("*/5 * * * *");
 const includeYear = ref(false);
 const fields = reactive<QuartzCronFields>({ ...DEFAULT_QUARTZ_FIELDS });
 const expressionDraft = ref(fieldsToExpression(fields, includeYear.value));
 const runCount = ref(10);
 
 const parseResult = computed(() => parseQuartzCron(expressionDraft.value));
-const isValid = computed(() => parseResult.value.fields !== null);
-const description = computed(() => parseResult.value.fields ? describeQuartzCron(parseResult.value.fields) : "");
+const unixParseResult = computed(() => {
+  try {
+    const interval = CronExpressionParser.parse(unixExpression.value.trim(), { currentDate: new Date() });
+    const dates: Date[] = [];
+    for (let index = 0; index < runCount.value; index += 1) dates.push(interval.next().toDate());
+    return { valid: true, error: "", dates };
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? `表达式无效：${error.message}` : "表达式无效", dates: [] };
+  }
+});
+const isValid = computed(() => cronMode.value === "quartz" ? parseResult.value.fields !== null : unixParseResult.value.valid);
+const description = computed(() => {
+  if (cronMode.value === "quartz") return parseResult.value.fields ? describeQuartzCron(parseResult.value.fields) : "";
+  return "按 Linux Cron 五字段规则计算（分 时 日 月 周）";
+});
 const nextDates = computed(() => {
+  if (cronMode.value === "unix") return unixParseResult.value.dates;
   if (!parseResult.value.fields) return [];
   try {
     return nextQuartzRuns(parseResult.value.fields, runCount.value);
@@ -73,10 +90,18 @@ function applyPreset(value: string) {
 
 function calculate() {
   if (!isValid.value) {
-    message.error(parseResult.value.error);
+    message.error(cronMode.value === "quartz" ? parseResult.value.error : unixParseResult.value.error);
     return;
   }
   message.success(`已计算最近 ${nextDates.value.length} 次运行时间`);
+}
+
+function applyUnixExpression() {
+  if (!unixParseResult.value.valid) {
+    message.error(unixParseResult.value.error);
+    return;
+  }
+  message.success("Linux Cron 表达式有效");
 }
 
 function formatDate(date: Date) {
@@ -95,8 +120,13 @@ function copyRuns() {
 </script>
 
 <template>
-  <section class="cron-tool">
-    <section class="builder-panel">
+  <section class="cron-tool" :class="{ 'unix-mode': cronMode === 'unix' }">
+    <div class="mode-switch" role="tablist" aria-label="Cron 类型">
+      <button type="button" role="tab" :aria-selected="cronMode === 'quartz'" :class="{ active: cronMode === 'quartz' }" @click="cronMode = 'quartz'">Quartz Cron</button>
+      <button type="button" role="tab" :aria-selected="cronMode === 'unix'" :class="{ active: cronMode === 'unix' }" @click="cronMode = 'unix'">Linux Cron</button>
+    </div>
+
+    <section v-if="cronMode === 'quartz'" class="builder-panel">
       <div class="field-tabs" role="tablist" aria-label="Cron 字段">
         <button
           v-for="field in CRON_FIELDS"
@@ -123,11 +153,11 @@ function copyRuns() {
       <header class="section-head compact">
         <div>
           <h2>表达式</h2>
-          <span>修改字段或输入完整表达式</span>
+          <span>Quartz：秒 分 时 日 月 周 年</span>
         </div>
       </header>
 
-      <div class="field-values">
+      <div v-if="cronMode === 'quartz'" class="field-values">
         <label v-for="field in CRON_FIELDS" :key="field.key">
           <span>{{ field.label }}</span>
           <n-input
@@ -141,12 +171,22 @@ function copyRuns() {
 
       <div class="expression-row">
         <n-input
+          v-if="cronMode === 'quartz'"
           v-model:value="expressionDraft"
           size="small"
           class="expression-input"
           :status="expressionDraft && !isValid ? 'error' : undefined"
           placeholder="0 0 9 ? * 2-6"
           @keyup.enter="applyExpression()"
+        />
+        <n-input
+          v-else
+          v-model:value="unixExpression"
+          size="small"
+          class="expression-input"
+          :status="unixExpression && !unixParseResult.valid ? 'error' : undefined"
+          placeholder="*/5 * * * *"
+          @keyup.enter="applyUnixExpression"
         />
         <n-input-number
           v-model:value="runCount"
@@ -157,16 +197,17 @@ function copyRuns() {
           class="count-input"
         />
         <span class="count-unit">次</span>
-        <n-button size="small" secondary :render-icon="() => renderIcon(RotateCcw)" @click="applyExpression()">反解析</n-button>
+        <n-button v-if="cronMode === 'quartz'" size="small" secondary :render-icon="() => renderIcon(RotateCcw)" @click="applyExpression()">反解析</n-button>
+        <n-button v-else size="small" secondary :render-icon="() => renderIcon(RotateCcw)" @click="applyUnixExpression">校验</n-button>
         <n-button size="small" type="primary" :render-icon="() => renderIcon(Play)" @click="calculate">计算</n-button>
       </div>
 
       <div v-if="isValid" class="validation valid"><span class="status-dot" />{{ description }}</div>
-      <div v-else class="validation invalid">{{ parseResult.error }}</div>
+      <div v-else class="validation invalid">{{ cronMode === 'quartz' ? parseResult.error : unixParseResult.error }}</div>
     </section>
 
-    <div class="output-area">
-      <section class="preset-panel">
+    <div class="output-area" :class="{ 'single-output': cronMode === 'unix' }">
+      <section v-if="cronMode === 'quartz'" class="preset-panel">
         <header class="section-head compact">
           <div><h2>常用模板</h2><span>Quartz 表达式</span></div>
         </header>
@@ -191,6 +232,11 @@ function copyRuns() {
 
 <style scoped>
 .cron-tool { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-rows: auto auto minmax(0, 1fr); border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-panel); }
+.cron-tool:not(.unix-mode) { grid-template-rows: auto auto auto minmax(0, 1fr); }
+.mode-switch { display: flex; gap: 2px; padding: 7px 12px 0; border-bottom: 1px solid var(--border-subtle); }
+.mode-switch button { height: 27px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer; }
+.mode-switch button:hover, .mode-switch button.active { color: var(--brand); background: var(--brand-soft); }
+.mode-switch button.active { border-bottom-color: var(--brand); font-weight: 700; }
 .builder-panel, .expression-panel { min-height: 0; padding: 8px 12px; }
 .builder-panel { border-bottom: 1px solid var(--border-subtle); }
 .expression-panel { border-bottom: 1px solid var(--border-subtle); }
@@ -219,6 +265,7 @@ function copyRuns() {
 .validation.invalid { color: var(--danger); background: var(--danger-soft); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .output-area { min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(260px, 0.72fr) minmax(380px, 1.28fr); padding: 8px 12px; }
+.output-area.single-output { grid-template-columns: 1fr; }
 .preset-panel { min-height: 0; display: flex; flex-direction: column; padding-right: 14px; }
 .preset-list { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 4px; }
 .preset-list button { min-width: 0; min-height: 31px; display: grid; align-content: center; gap: 1px; padding: 3px 7px; border: 1px solid var(--border-subtle); border-radius: 5px; background: var(--bg-input); text-align: left; cursor: pointer; }

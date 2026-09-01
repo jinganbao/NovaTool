@@ -80,6 +80,12 @@
   white-space: nowrap;
 }
 
+.diagnostic-summary {
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .section-actions {
   display: flex;
   align-items: center;
@@ -102,6 +108,22 @@
   background: var(--success);
 }
 
+.reconnect-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.reconnect-limit {
+  width: 44px;
+}
+
+.reconnect-progress {
+  color: var(--warning);
+}
+
 .payload-name {
   width: 100px;
 }
@@ -110,8 +132,16 @@
   width: 140px;
 }
 
+.history-select {
+  width: 190px;
+}
+
 .receive-mode {
   width: 82px;
+}
+
+.log-filter {
+  width: 94px;
 }
 
 /* ---- 发送区 ---- */
@@ -246,12 +276,19 @@
   .payload-select {
     width: 120px;
   }
+
+  .history-select {
+    width: 160px;
+  }
 }
 
 @media (max-width: 860px) {
+  .diagnostic-summary {
+    display: none;
+  }
+
   .section-head {
     flex-direction: column;
     align-items: flex-start;
   }
 }
-

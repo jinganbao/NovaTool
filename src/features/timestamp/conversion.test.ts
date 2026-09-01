@@ -5,6 +5,7 @@ import {
   formatDateTimeInput,
   formatLocalIso,
   formatLocalRfc2822,
+  formatUtcDate,
   offsetString,
   parseDateTimeInput,
   parseTimestamp,
@@ -71,5 +72,9 @@ describe("local timezone format", () => {
 
   it("RFC 2822 按本地时区带偏移输出", () => {
     expect(formatLocalRfc2822(date)).toBe("Sat, 01 Nov 2025 05:00:00 +0800");
+  });
+
+  it("支持输出不带时区后缀的标准日期时间", () => {
+    expect(formatUtcDate(date, false, false)).toBe("2025-10-31 21:00:00");
   });
 });

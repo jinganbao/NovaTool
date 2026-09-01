@@ -1,8 +1,10 @@
 mod formatters;
+mod http_client;
 mod menu;
 mod port_check;
 mod tcp_client;
 mod tcp_server;
+mod udp_client;
 mod text_diff;
 mod utils;
 
@@ -42,9 +44,11 @@ pub fn run() {
             tcp_client::tcp_connect,
             tcp_client::tcp_conn_send,
             tcp_client::tcp_disconnect,
+            udp_client::udp_send,
             tcp_server::tcp_server_start,
             tcp_server::tcp_server_stop,
             tcp_server::tcp_server_send,
+            tcp_server::tcp_server_broadcast,
             tcp_server::tcp_server_disconnect_client,
             text_diff::text_diff,
             formatters::json::json_format,
@@ -52,6 +56,7 @@ pub fn run() {
             port_check::list_ports,
             port_check::kill_process,
             menu::open_url
+            , http_client::http_request
         ])
         .setup(|app| {
             // 系统菜单栏（全中文）

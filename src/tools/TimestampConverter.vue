@@ -134,7 +134,7 @@ function changeDateTimeMode(mode: DateTimeMode) {
       <section class="converter-panel">
         <header class="panel-head">
           <div>
-            <h2>时间戳转日期</h2>
+          <h2>时间戳转日期</h2>
             <span>支持 10 / 13 / 16 / 19 位 Epoch</span>
           </div>
           <n-button size="tiny" quaternary :render-icon="() => renderIcon(RefreshCw)" @click="fillCurrentTimestamp">当前时间</n-button>
@@ -187,8 +187,12 @@ function changeDateTimeMode(mode: DateTimeMode) {
         </div>
 
         <div v-if="timestampResult" class="result-block">
-          <TimeValueRow label="日期时间" :value="formatLocalDate(timestampResult.date, false)" @copy="copyText" />
-          <TimeValueRow label="UTC" :value="formatUtcDate(timestampResult.date)" @copy="copyText" />
+          <TimeValueRow
+            :label="timestampOutputMode === 'local' ? '本地时间' : 'UTC 时间'"
+            :value="timestampOutputMode === 'local' ? formatLocalDate(timestampResult.date, false) : formatUtcDate(timestampResult.date, false, false)"
+            @copy="copyText"
+          />
+          <TimeValueRow label="UTC 时间（含毫秒）" :value="formatUtcDate(timestampResult.date)" @copy="copyText" />
           <TimeValueRow label="ISO 8601" :value="timestampOutputMode === 'local' ? formatLocalIso(timestampResult.date) : timestampResult.date.toISOString()" @copy="copyText" />
           <TimeValueRow label="RFC 2822" :value="timestampOutputMode === 'local' ? formatLocalRfc2822(timestampResult.date) : timestampResult.date.toUTCString()" @copy="copyText" />
           <div class="result-meta">

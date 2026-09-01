@@ -1,6 +1,7 @@
 import { computed, ref, watch } from "vue";
+import { allTools } from "@/config/tools";
 import type { ToolKey } from "@/types/tools";
-import { loadJson, saveJson } from "@/utils/storage";
+import { loadVersionedJson, saveVersionedJson } from "@/utils/storage";
 
 interface HistoryState {
   recent: ToolKey[];
@@ -8,10 +9,21 @@ interface HistoryState {
 }
 
 const STORAGE_KEY = "NovaTool-tool-history";
+const validToolKeys = new Set<ToolKey>(allTools.map((tool) => tool.key));
 
-const state = ref<HistoryState>(loadJson(STORAGE_KEY, { recent: [], favorites: [] }));
+const state = ref<HistoryState>(loadVersionedJson(STORAGE_KEY, { recent: [], favorites: [] }, 1, (value) => {
+  const raw = value && typeof value === "object" ? value as Partial<HistoryState> : {};
+  return {
+    recent: Array.isArray(raw.recent)
+      ? raw.recent.filter((key): key is ToolKey => typeof key === "string" && validToolKeys.has(key as ToolKey)).slice(0, 10)
+      : [],
+    favorites: Array.isArray(raw.favorites)
+      ? raw.favorites.filter((key): key is ToolKey => typeof key === "string" && validToolKeys.has(key as ToolKey))
+      : [],
+  };
+}));
 
-watch(state, (v) => saveJson(STORAGE_KEY, v), { deep: true });
+watch(state, (v) => saveVersionedJson(STORAGE_KEY, v, 1), { deep: true });
 
 export function useToolHistory() {
   function recordUse(key: ToolKey) {

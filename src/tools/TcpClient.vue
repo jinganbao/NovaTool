@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NButton, NInput, NSelect, NSpace, NTag } from "naive-ui";
+import { NButton, NInput, NInputNumber, NSelect, NSpace, NSwitch, NTag } from "naive-ui";
 import {
   BookmarkPlus,
   ChevronDown,
@@ -21,10 +21,15 @@ const {
   connId,
   connecting,
   disconnecting,
+  autoReconnect,
+  reconnectLimit,
+  reconnectAttempt,
   host,
   port,
   connectionName,
+  connectionGroup,
   mode,
+  sendEnding,
   timeoutMs,
   selectedConnectionId,
   connectionOptions,
@@ -33,13 +38,18 @@ const {
   selectedPayloadId,
   payloadName,
   payloadOptions,
+  selectedHistoryId,
+  historyOptions,
   showTemplate,
   templateFields,
   templateSuffix,
   templateResult,
   receiveMode,
+  receiveFilter,
+  filteredReceiveLog,
   receiveLog,
   receiveRef,
+  diagnostics,
   copyText,
   connect,
   disconnect,
@@ -47,6 +57,7 @@ const {
   saveConnection,
   deleteConnection,
   applySavedPayload,
+  applyHistory,
   savePayload,
   deletePayload,
   addTemplateField,
@@ -79,6 +90,10 @@ const {
           <n-input v-model:value="connectionName" size="small" />
         </label>
         <label class="field">
+          <span class="field-label">分组</span>
+          <n-input v-model:value="connectionGroup" size="small" placeholder="可选" />
+        </label>
+        <label class="field">
           <span class="field-label">Host</span>
           <n-input v-model:value="host" size="small" />
         </label>
@@ -97,6 +112,18 @@ const {
             ]"
           />
         </label>
+        <label class="field">
+          <span class="field-label">结束符</span>
+          <n-select
+            v-model:value="sendEnding"
+            size="small"
+            :options="[
+              { label: '无', value: 'none' },
+              { label: 'LF', value: 'lf' },
+              { label: 'CRLF', value: 'crlf' },
+            ]"
+          />
+        </label>
         <label class="field field-tight">
           <span class="field-label">超时(ms)</span>
           <n-input v-model:value="timeoutMs" size="small" />
@@ -111,6 +138,8 @@ const {
           <n-button
             size="tiny"
             quaternary
+            aria-label="删除常用连接"
+            title="删除常用连接"
             :render-icon="() => renderIcon(Trash2)"
             @click="deleteConnection"
           />
@@ -122,7 +151,7 @@ const {
             type="primary"
             :loading="connecting"
             :render-icon="() => renderIcon(Link)"
-            @click="connect"
+            @click="connect()"
             >连接</n-button
           >
           <n-button
@@ -140,6 +169,13 @@ const {
             </template>
             已连接
           </n-tag>
+          <span class="reconnect-setting">
+            <n-switch v-model:value="autoReconnect" size="small" />
+            <span>自动重连</span>
+            <n-input-number v-model:value="reconnectLimit" size="small" :min="1" :max="10" :show-button="false" class="reconnect-limit" />
+            <span>次</span>
+            <span v-if="reconnectAttempt > 0 && !connId" class="reconnect-progress">第 {{ reconnectAttempt }} 次</span>
+          </span>
         </n-space>
       </div>
     </div>
@@ -164,6 +200,15 @@ const {
             class="payload-select"
             @update:value="applySavedPayload"
           />
+          <n-select
+            v-model:value="selectedHistoryId"
+            size="small"
+            clearable
+            placeholder="发送历史"
+            :options="historyOptions"
+            class="history-select"
+            @update:value="applyHistory"
+          />
           <n-button
             size="tiny"
             secondary
@@ -174,6 +219,8 @@ const {
           <n-button
             size="tiny"
             quaternary
+            aria-label="删除常用输入"
+            title="删除常用输入"
             :render-icon="() => renderIcon(Trash2)"
             @click="deletePayload"
           />
@@ -211,6 +258,8 @@ const {
             <n-button
               size="tiny"
               quaternary
+              aria-label="删除模板字段"
+              title="删除模板字段"
               :render-icon="() => renderIcon(Trash2)"
               @click="removeTemplateField(field.id)"
             />
@@ -249,6 +298,7 @@ const {
       <div class="section-head">
         <span class="section-title">接收内容</span>
         <div class="section-actions">
+          <span class="diagnostic-summary">请求 {{ diagnostics.requests }} · ↑ {{ diagnostics.bytesSent }} B · ↓ {{ diagnostics.bytesReceived }} B · {{ diagnostics.lastDurationMs }} ms</span>
           <n-select
             v-model:value="receiveMode"
             size="small"
@@ -258,17 +308,29 @@ const {
             ]"
             class="receive-mode"
           />
+          <n-select
+            v-model:value="receiveFilter"
+            size="small"
+            :options="[
+              { label: '全部日志', value: 'all' },
+              { label: '仅发送', value: 'send' },
+              { label: '仅接收', value: 'recv' },
+              { label: '仅错误', value: 'error' },
+              { label: '仅系统', value: 'info' },
+            ]"
+            class="log-filter"
+          />
           <n-button
             size="tiny"
             secondary
             :render-icon="() => renderIcon(Copy)"
-            @click="copyText(receiveLog)"
+            @click="copyText(filteredReceiveLog)"
             >复制</n-button
           >
           <n-button size="tiny" secondary @click="receiveLog = ''">清空</n-button>
         </div>
       </div>
-      <pre ref="receiveRef" class="receive-log">{{ receiveLog || "等待接收数据..." }}</pre>
+      <pre ref="receiveRef" class="receive-log">{{ receiveLog ? (filteredReceiveLog || "暂无匹配日志") : "等待接收数据..." }}</pre>
     </div>
   </section>
 </template>

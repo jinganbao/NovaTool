@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import CodeEditor from "@/components/editor/CodeEditor.vue";
+import ToolState from "@/components/common/ToolState.vue";
 
 defineProps<{
   input: string;
@@ -46,7 +47,10 @@ defineSlots<{
           <div><h2>{{ outputTitle || "结果" }}</h2><span>{{ output.length }} 字符</span></div>
           <div class="pane-actions"><slot name="output-actions" /></div>
         </header>
-        <CodeEditor :model-value="output" language="plain" readonly :placeholder="outputPlaceholder || '转换结果'" />
+        <div class="codec-output">
+          <CodeEditor :model-value="output" language="plain" readonly :placeholder="outputPlaceholder || '转换结果'" />
+          <ToolState v-if="!output" title="暂无转换结果" detail="输入内容后点击转换" compact />
+        </div>
       </section>
     </div>
   </section>
@@ -63,6 +67,8 @@ defineSlots<{
 .codec-pane header > div:first-child { display: flex; align-items: baseline; gap: 8px; }
 .codec-pane h2 { margin: 0; color: var(--text-primary); font-size: 13px; }
 .codec-pane header span { color: var(--text-muted); font-size: 10px; }
+.codec-output { position: relative; flex: 1; min-height: 0; display: flex; }
+.codec-output :deep(.tool-state) { position: absolute; inset: 0; pointer-events: none; }
 :deep(.n-button) { height: 27px; font-size: 11px; }
 @media (max-width: 860px) {
   .codec-workbench { overflow-y: auto; }

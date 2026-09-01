@@ -1,6 +1,6 @@
 {
   "name": "NovaTool",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "private": true,
   "packageManager": "pnpm@11.1.3",
   "type": "module",
@@ -10,6 +10,7 @@
     "test": "vitest run",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint src --ext .ts,.vue",
+    "quality": "bash scripts/quality-gate.sh",
     "format": "prettier --write \"src/**/*.{ts,vue}\"",
     "preview": "vite preview --host 127.0.0.1 --port 4174",
     "tauri": "tauri",
@@ -34,6 +35,7 @@
     "cron-parser": "^5.8.1",
     "hash-wasm": "^4.12.0",
     "js-base64": "^3.9.2",
+    "jsonpath-plus": "^10.4.0",
     "lucide-vue-next": "^0.468.0",
     "naive-ui": "^2.40.3",
     "qrcode": "^1.5.4",

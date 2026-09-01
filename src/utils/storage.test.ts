@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadJson, makeId, saveJson } from "./storage";
+import { loadJson, loadVersionedJson, makeId, saveJson, saveVersionedJson } from "./storage";
 
 // happy-dom 20 不注入 localStorage，用 mock 替代（行为与浏览器 Storage 一致）
 const mockStorage = (() => {
@@ -43,6 +43,13 @@ describe("storage", () => {
   it("空字符串存储视为无数据", () => {
     localStorage.setItem("test-key", "");
     expect(loadJson("test-key", "fallback")).toBe("fallback");
+  });
+
+  it("支持版本化数据并兼容旧格式迁移", () => {
+    saveVersionedJson("versioned", { value: 1 }, 2);
+    expect(loadVersionedJson<{ value: number }>("versioned", { value: 0 }, 2, (value, version) => ({ value: (value as { value: number }).value + version }))).toEqual({ value: 3 });
+    localStorage.setItem("legacy", JSON.stringify({ value: 4 }));
+    expect(loadVersionedJson<{ value: number }>("legacy", { value: 0 }, 2, (value, version) => ({ value: (value as { value: number }).value + version }))).toEqual({ value: 4 });
   });
 });
 

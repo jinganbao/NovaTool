@@ -298,6 +298,44 @@ pub async fn tcp_server_send(
         .map_err(|_| "发送失败：客户端消费过慢或已断开".to_string())
 }
 
+/// 向当前所有客户端广播数据。
+#[tauri::command]
+pub async fn tcp_server_broadcast(
+    state: tauri::State<'_, ServerState>,
+    data: String,
+    mode: Option<String>,
+) -> Result<usize, String> {
+    if data.len() > MAX_SEND_BYTES * 3 {
+        return Err(format!("发送数据过大（上限 {} 字节）", MAX_SEND_BYTES));
+    }
+    let bytes = if mode.as_deref() == Some("hex") {
+        crate::utils::decode_hex(&data)?
+    } else {
+        data.into_bytes()
+    };
+    if bytes.len() > MAX_SEND_BYTES {
+        return Err(format!("发送数据过大（上限 {} 字节）", MAX_SEND_BYTES));
+    }
+
+    let senders = state
+        .clients
+        .lock()
+        .await
+        .values()
+        .map(|handle| handle.sender.clone())
+        .collect::<Vec<_>>();
+    let mut sent = 0;
+    for sender in senders {
+        if sender.try_send(bytes.clone()).is_ok() {
+            sent += 1;
+        }
+    }
+    if sent == 0 {
+        return Err("当前没有可发送的客户端".into());
+    }
+    Ok(sent)
+}
+
 /// 关闭指定客户端的 socket，并由客户端任务统一发送断开事件和清理状态。
 #[tauri::command]
 pub async fn tcp_server_disconnect_client(

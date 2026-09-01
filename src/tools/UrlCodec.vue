@@ -70,7 +70,7 @@ function clearAll() {
       <n-button size="tiny" secondary :render-icon="() => renderIcon(Eraser)" @click="clearAll">清空</n-button>
     </template>
     <template #output-actions>
-      <n-button size="tiny" quaternary :disabled="!output" :render-icon="() => renderIcon(ArrowLeftRight)" title="交换并反向转换" @click="swap" />
+      <n-button size="tiny" quaternary :disabled="!output" aria-label="交换并反向转换" :render-icon="() => renderIcon(ArrowLeftRight)" title="交换并反向转换" @click="swap" />
       <n-button size="tiny" secondary :disabled="!output" :render-icon="() => renderIcon(Copy)" @click="copyText(output)">复制</n-button>
     </template>
   </CodecWorkbench>

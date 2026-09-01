@@ -1,11 +1,14 @@
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useMessage } from "naive-ui";
 import { useClipboard } from "@/composables/useClipboard";
 import type { ClientEntry, ServerEvent } from "./types";
+import { loadJson, saveJson } from "@/utils/storage";
 
 const MAX_LOG_CHARS = 512 * 1024;
+const SERVER_CONFIG_KEY = "NovaTool-tcp-server-config";
+type LogFilter = "all" | "data" | "send" | "connect" | "error";
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -14,8 +17,9 @@ function errorText(error: unknown) {
 export function useTcpServer() {
   const message = useMessage();
   const { copyText } = useClipboard(message);
-  const port = ref("9000");
-  const lanEnabled = ref(false);
+  const savedConfig = loadJson(SERVER_CONFIG_KEY, { port: "9000", lanEnabled: false });
+  const port = ref(typeof savedConfig.port === "string" ? savedConfig.port : "9000");
+  const lanEnabled = ref(savedConfig.lanEnabled === true);
   const running = ref(false);
   const starting = ref(false);
   const stopping = ref(false);
@@ -27,12 +31,19 @@ export function useTcpServer() {
   const serverSendText = ref("");
   const sendMode = ref<"text" | "hex">("text");
   const selectedSendClient = ref<string | null>(null);
+  const logFilter = ref<LogFilter>("all");
   let unlisten: UnlistenFn | null = null;
   let disposed = false;
 
   const clientOptions = computed(() =>
     clients.value.map((client) => ({ label: `${client.id} (${client.addr})`, value: client.id })),
   );
+  const filteredLogLines = computed(() => {
+    if (logFilter.value === "all") return logLines.value;
+    return logLines.value.filter((line) => line.includes(`] ${logFilter.value.toUpperCase()} `));
+  });
+
+  watch([port, lanEnabled], () => saveJson(SERVER_CONFIG_KEY, { port: port.value, lanEnabled: lanEnabled.value }));
 
   function appendLog(time: string, tag: string, header: string, body?: string) {
     const line = `[${time}] ${tag} ${header}${body ? `\n${body}` : ""}`;
@@ -143,6 +154,20 @@ export function useTcpServer() {
     }
   }
 
+  async function broadcastToClients() {
+    if (serverSendText.value.length === 0) {
+      message.warning("请输入广播内容");
+      return;
+    }
+    try {
+      const count = await invoke<number>("tcp_server_broadcast", { data: serverSendText.value, mode: sendMode.value });
+      serverSendText.value = "";
+      message.success(`已发送给 ${count} 个客户端`);
+    } catch (error) {
+      message.error(errorText(error));
+    }
+  }
+
   async function disconnectClient(clientId: string) {
     try {
       await invoke("tcp_server_disconnect_client", { clientId });
@@ -159,7 +184,7 @@ export function useTcpServer() {
 
   return {
     port, lanEnabled, running, starting, stopping, logLines, clients, displayMode,
-    logRef, serverSendText, sendMode, selectedSendClient, clientOptions, copyText,
-    startServer, stopServer, sendToClient, disconnectClient, clearLog,
+    logRef, serverSendText, sendMode, selectedSendClient, clientOptions, logFilter, filteredLogLines, copyText,
+    startServer, stopServer, sendToClient, broadcastToClients, disconnectClient, clearLog,
   };
 }

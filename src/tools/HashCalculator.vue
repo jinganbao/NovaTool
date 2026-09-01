@@ -7,6 +7,7 @@ import { computeTextHashes, HASH_ALGORITHMS, utf8ByteLength } from "@/features/h
 import type { HashAlgorithm } from "@/features/hash/hashService";
 import { useClipboard } from "@/composables/useClipboard";
 import { renderIcon } from "@/utils/render";
+import ToolState from "@/components/common/ToolState.vue";
 
 const message = useMessage();
 const { copyText } = useClipboard(message);
@@ -73,6 +74,7 @@ function clearAll() {
       <section class="results-pane">
         <header><div><h2>摘要结果</h2><span>由 hash-wasm WebAssembly 计算</span></div></header>
         <div class="hash-results">
+          <ToolState v-if="!results.size" title="暂无摘要结果" detail="选择算法后点击计算" />
           <div v-for="algorithm in HASH_ALGORITHMS.filter((item) => selected.includes(item.key))" :key="algorithm.key" class="hash-row">
             <div class="algo-meta"><strong>{{ algorithm.label }}</strong><span>{{ algorithm.bits }} bit</span></div>
             <code :class="{ empty: !results.has(algorithm.key) }">{{ displayValue(algorithm.key) || "尚未计算" }}</code>

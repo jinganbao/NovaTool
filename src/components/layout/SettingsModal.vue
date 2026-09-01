@@ -1,15 +1,63 @@
 <script setup lang="ts">
-import { NInputNumber, NModal, NSelect, NSpace, NSwitch, NText } from "naive-ui";
+import { ref } from "vue";
+import { NButton, NInputNumber, NModal, NSelect, NSpace, NSwitch, NText, useMessage } from "naive-ui";
+import { Download, RotateCcw, Upload } from "lucide-vue-next";
 import { themeModeOptions, themePresets } from "@/config/theme";
 import { allTools } from "@/config/tools";
-import { useConfig } from "@/composables/useConfig";
+import { normalizeConfig, useConfig } from "@/composables/useConfig";
+import { renderIcon } from "@/utils/render";
 
 const show = defineModel<boolean>("show", { required: true });
 
 const config = useConfig();
+const message = useMessage();
+const importInput = ref<HTMLInputElement | null>(null);
 
 function setThemeMode(mode: "dark" | "light" | "auto") {
   config.themeMode = mode;
+}
+
+function exportSettings() {
+  const storage: Record<string, unknown> = {};
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith("NovaTool-")) continue;
+    try {
+      storage[key] = JSON.parse(localStorage.getItem(key) ?? "null");
+    } catch {
+      storage[key] = localStorage.getItem(key);
+    }
+  }
+  const blob = new Blob([JSON.stringify({ version: 2, config: { ...config }, storage }, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "novatool-settings.json";
+  anchor.click();
+  URL.revokeObjectURL(url);
+  message.success("配置已导出");
+}
+
+async function importSettings(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text()) as { config?: unknown; storage?: Record<string, unknown> };
+    Object.assign(config, normalizeConfig(data.config ?? data));
+    for (const [key, value] of Object.entries(data.storage ?? {})) {
+      if (key.startsWith("NovaTool-")) localStorage.setItem(key, JSON.stringify(value));
+    }
+    message.success("配置已导入");
+  } catch {
+    message.error("配置文件无效");
+  }
+}
+
+function resetSettings() {
+  config.resetConfig();
+  message.success("已恢复默认设置");
 }
 </script>
 
@@ -77,6 +125,16 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
         <n-text class="config-modal-label">自动更新</n-text>
         <n-switch v-model:value="config.autoCheckUpdate" size="small" />
         <n-text depth="3" class="config-modal-hint">启动时静默检查新版本</n-text>
+      </div>
+
+      <div class="config-modal-row settings-actions">
+        <n-text class="config-modal-label">配置管理</n-text>
+        <n-space :size="8">
+          <n-button size="small" secondary :render-icon="() => renderIcon(Upload)" @click="importInput?.click()">导入</n-button>
+          <n-button size="small" secondary :render-icon="() => renderIcon(Download)" @click="exportSettings">导出</n-button>
+          <n-button size="small" quaternary :render-icon="() => renderIcon(RotateCcw)" @click="resetSettings">恢复默认</n-button>
+        </n-space>
+        <input ref="importInput" class="settings-file-input" type="file" accept="application/json" @change="importSettings" />
       </div>
     </n-space>
   </n-modal>
@@ -161,6 +219,14 @@ function setThemeMode(mode: "dark" | "light" | "auto") {
   border-color: var(--brand);
   color: var(--text-primary);
   background: var(--brand-soft);
+}
+
+.settings-actions {
+  align-items: flex-start;
+}
+
+.settings-file-input {
+  display: none;
 }
 
 </style>

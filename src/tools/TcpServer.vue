@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NButton, NInput, NSelect, NSpace, NTag } from "naive-ui";
+import { NButton, NInput, NSelect, NSpace, NTag, NSwitch } from "naive-ui";
 import { Copy, Play, RadioTower, Send, Square, Trash2, X } from "lucide-vue-next";
 import { useTcpServer } from "@/features/tcp-server/useTcpServer";
 import { renderIcon } from "@/utils/render";
@@ -17,10 +17,13 @@ const {
   serverSendText,
   sendMode,
   selectedSendClient,
+  logFilter,
+  filteredLogLines,
   copyText,
   startServer,
   stopServer,
   sendToClient,
+  broadcastToClients,
   disconnectClient,
   clearLog,
 } = useTcpServer();
@@ -49,6 +52,18 @@ const {
       </div>
       <div class="conn-actions">
         <n-space :size="8" align="center">
+          <n-select
+            v-model:value="logFilter"
+            size="small"
+            :options="[
+              { label: '全部日志', value: 'all' },
+              { label: '仅数据', value: 'data' },
+              { label: '仅发送', value: 'send' },
+              { label: '仅连接', value: 'connect' },
+              { label: '仅错误', value: 'error' },
+            ]"
+            class="log-filter"
+          />
           <n-button
             v-if="!running"
             size="small"
@@ -134,6 +149,13 @@ const {
         :disabled="!selectedSendClient || !serverSendText.trim()"
         @click="sendToClient"
       >发送</n-button>
+      <n-button
+        size="tiny"
+        secondary
+        :render-icon="() => renderIcon(Send)"
+        :disabled="!serverSendText.trim()"
+        @click="broadcastToClients"
+      >群发</n-button>
     </div>
 
     <!-- ========== 日志区：独占下方全部空间 ========== -->
@@ -154,7 +176,7 @@ const {
             size="tiny"
             secondary
             :render-icon="() => renderIcon(Copy)"
-            @click="copyText(logLines.join('\n'))"
+            @click="copyText(filteredLogLines.join('\n'))"
             >复制</n-button
           >
           <n-button size="tiny" secondary :render-icon="() => renderIcon(Trash2)" @click="clearLog"
@@ -163,16 +185,16 @@ const {
         </n-space>
       </div>
       <pre
-        v-if="logLines.length > 0"
+        v-if="filteredLogLines.length > 0"
         ref="logRef"
         class="log-view"
       ><span
-          v-for="(line, i) in logLines"
+          v-for="(line, i) in filteredLogLines"
           :key="i"
         >{{ line }}<br v-if="i < logLines.length - 1" /></span></pre>
       <div v-else class="log-empty">
         <RadioTower :size="28" />
-        <span>等待客户端连接…</span>
+        <span>{{ logLines.length > 0 ? "当前筛选条件下暂无日志" : "等待客户端连接…" }}</span>
       </div>
     </div>
   </section>

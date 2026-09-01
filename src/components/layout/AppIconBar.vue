@@ -2,7 +2,6 @@
 import { computed, ref } from "vue";
 import { Settings } from "lucide-vue-next";
 import { NPopover, NTooltip } from "naive-ui";
-import appIcon from "@/assets/app-icon.png";
 import { toolGroups } from "@/config/tools";
 import type { ToolKey } from "@/types/tools";
 
@@ -30,10 +29,6 @@ function selectTool(key: ToolKey) {
 
 <template>
   <aside class="icon-bar" :class="{ mac: isMac }">
-    <div class="brand-mark" title="NovaTool">
-      <img :src="appIcon" alt="" />
-    </div>
-
     <nav class="group-nav" aria-label="工具分类">
       <n-popover
         v-for="group in toolGroups"
@@ -102,7 +97,7 @@ function selectTool(key: ToolKey) {
 
 <style scoped>
 .icon-bar {
-  width: 56px;
+  width: 72px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -115,25 +110,7 @@ function selectTool(key: ToolKey) {
 }
 
 .icon-bar.mac {
-  padding-top: 40px;
-}
-
-.brand-mark {
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  overflow: hidden;
-  box-shadow: 0 3px 10px var(--shadow-strong);
-}
-
-.brand-mark img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  padding-top: 8px;
 }
 
 .group-nav {

@@ -2,9 +2,10 @@
 import { computed, onBeforeUnmount, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { NButton, NInput, NSpace, NTag, NPopconfirm, useMessage } from "naive-ui";
-import { Copy, RefreshCw, Search, Skull, Wifi } from "lucide-vue-next";
+import { Copy, RefreshCw, Search, Skull } from "lucide-vue-next";
 import { renderIcon } from "@/utils/render";
 import { useClipboard } from "@/composables/useClipboard";
+import ToolState from "@/components/common/ToolState.vue";
 
 /* ---- 类型 ---- */
 type PortEntry = {
@@ -111,7 +112,8 @@ refresh();
 
     <!-- ====== 表格 ====== -->
     <div class="table-wrap">
-      <table v-if="filtered.length > 0" class="port-table">
+      <ToolState v-if="loading" type="loading" title="正在扫描端口" detail="正在读取当前监听状态" />
+      <table v-else-if="filtered.length > 0" class="port-table">
         <thead>
           <tr>
             <th class="col-port">端口</th>
@@ -127,7 +129,7 @@ refresh();
             <td><code class="pid-text">{{ row.pid }}</code></td>
             <td>
               <span class="proc-name">{{ row.processName }}</span>
-              <n-button size="tiny" quaternary :render-icon="() => renderIcon(Copy)" @click="copyRow(row)" />
+              <n-button size="tiny" quaternary aria-label="复制端口信息" title="复制端口信息" :render-icon="() => renderIcon(Copy)" @click="copyRow(row)" />
             </td>
             <td><span class="proto-badge">{{ row.protocol }}</span></td>
             <td>
@@ -142,11 +144,7 @@ refresh();
         </tbody>
       </table>
 
-      <div v-else-if="!loading" class="empty">
-        <Wifi :size="28" />
-        <span v-if="searchQuery">无匹配结果</span>
-        <span v-else>暂无监听端口</span>
-      </div>
+      <ToolState v-else-if="!loading" :title="searchQuery ? '无匹配结果' : '暂无监听端口'" :detail="searchQuery ? '调整搜索条件后重试' : '当前没有检测到正在监听的端口'" />
     </div>
   </section>
 </template>
