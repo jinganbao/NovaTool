@@ -130,13 +130,15 @@ export function useHttpClient() {
     error.value = "";
     try {
       response.value = await invoke<HttpResponse>("http_request", {
-        method: method.value,
-        url: resolve(url.value.trim()),
-        query: enabledQuery.value.map(({ key, value }) => ({ key: resolve(key), value: resolve(value) })),
-        headers: enabledHeaders.value.map(({ key, value }) => ({ key: resolve(key), value: resolve(value) })),
-        body: resolve(body.value),
-        bodyType: bodyType.value,
-        timeoutMs: timeoutMs.value,
+        request: {
+          method: method.value,
+          url: resolve(url.value.trim()),
+          query: enabledQuery.value.map(({ key, value }) => ({ key: resolve(key), value: resolve(value) })),
+          headers: enabledHeaders.value.map(({ key, value }) => ({ key: resolve(key), value: resolve(value) })),
+          body: resolve(body.value),
+          bodyType: bodyType.value,
+          timeoutMs: timeoutMs.value,
+        },
       });
       saveHistory();
       message.success(`${response.value.status} ${response.value.statusText}`);
