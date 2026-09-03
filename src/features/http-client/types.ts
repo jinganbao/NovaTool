@@ -13,7 +13,8 @@ export interface HttpRequestConfig {
   query: HttpKeyValue[];
   headers: HttpKeyValue[];
   body: string;
-  bodyType: "none" | "json" | "text" | "form";
+  bodyType: "none" | "form-data" | "x-www-form-urlencoded" | "json" | "xml" | "text" | "binary" | "graphql" | "msgpack";
+  bodyFields?: HttpKeyValue[];
   timeoutMs: number;
 }
 
