@@ -189,10 +189,10 @@ watch(activeTool, () => {
 <style scoped>
 .app-shell {
   height: 100vh;
-  min-width: 960px;
+  min-width: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   background: var(--bg-app);
   color: var(--text-primary);
   overflow: hidden;
@@ -222,6 +222,16 @@ watch(activeTool, () => {
   padding: 12px 14px 14px;
   flex: 1;
   min-height: 0;
+}
+
+@media (max-width: 700px) {
+  .app-shell {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .workspace :deep(.tool-panel) {
+    padding: 8px;
+  }
 }
 
 /* 异步加载动画 */

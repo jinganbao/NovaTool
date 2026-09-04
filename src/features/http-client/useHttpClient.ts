@@ -6,6 +6,7 @@ import { queryJson } from "@/features/query/queryService";
 import type { HttpProject } from "./useHttpProjects";
 import type { HttpHistoryItem, HttpKeyValue, HttpMethod, HttpRequestConfig, HttpResponse, HttpTemplate } from "./types";
 import { buildCurl, parseCurl } from "./curlService";
+import { enabledBodyFields, serializeUrlEncoded } from "./requestSerialization";
 
 const HISTORY_KEY = "NovaTool-http-history";
 const TEMPLATES_KEY = "NovaTool-http-templates";
@@ -14,6 +15,19 @@ const DEFAULT_HEADERS: HttpKeyValue[] = [{ id: makeId("header"), key: "Accept", 
 
 function row(key = "", value = ""): HttpKeyValue {
   return { id: makeId("param"), key, value, enabled: true };
+}
+
+function bodyRow(key = "", value = ""): HttpKeyValue {
+  return { ...row(key, value), type: "string", description: "" };
+}
+
+function normalizeBodyFields(fields?: HttpKeyValue[]) {
+  return fields?.map((item) => ({
+    ...item,
+    id: makeId("body"),
+    type: item.type ?? "string",
+    description: item.description ?? "",
+  })) ?? [bodyRow()];
 }
 
 export function useHttpClient(
@@ -27,11 +41,15 @@ export function useHttpClient(
   const query = ref<HttpKeyValue[]>([row()]);
   const headers = ref<HttpKeyValue[]>(DEFAULT_HEADERS);
   const body = ref("");
-  const bodyFields = ref<HttpKeyValue[]>([row()]);
+  const bodyFields = ref<HttpKeyValue[]>([bodyRow()]);
+  const cookies = ref<HttpKeyValue[]>([row()]);
   const bodyType = ref<HttpRequestConfig["bodyType"]>("none");
   const timeoutMs = ref(15000);
   const loading = ref(false);
+  let requestSequence = 0;
   const response = ref<HttpResponse | null>(null);
+  const responseView = ref<"pretty" | "raw">("pretty");
+  const responseSearch = ref("");
   const error = ref("");
   const history = ref<HttpHistoryItem[]>(loadJson(HISTORY_KEY, []));
   const selectedHistoryId = ref<string | null>(null);
@@ -42,10 +60,14 @@ export function useHttpClient(
   const curlText = ref("");
   const sessionAuth = ref({
     enabled: false,
+    mode: "bearer" as "none" | "bearer" | "api-key" | "basic",
     responsePath: "$.tokenValue",
     headerName: "Authorization",
     prefix: "",
     token: "",
+    username: "",
+    password: "",
+    apiKeyName: "X-API-Key",
   });
 
   function currentInterface() {
@@ -60,27 +82,31 @@ export function useHttpClient(
       url.value = "";
       query.value = [row()];
       headers.value = [{ ...DEFAULT_HEADERS[0], id: makeId("header") }];
+      cookies.value = [row()];
       body.value = "";
-      bodyFields.value = [row()];
+      bodyFields.value = [bodyRow()];
       bodyType.value = "none";
       timeoutMs.value = 15000;
-      sessionAuth.value = { enabled: false, responsePath: "$.tokenValue", headerName: "Authorization", prefix: "", token: "" };
+      sessionAuth.value = { enabled: false, mode: "bearer", responsePath: "$.tokenValue", headerName: "Authorization", prefix: "Bearer ", token: projects?.value.find((item) => item.id === projectId?.value)?.sessionToken ?? "", username: "", password: "", apiKeyName: "X-API-Key" };
       return;
     }
     method.value = saved.method ?? "GET";
     url.value = saved.url ?? "";
     query.value = saved.query?.map((item) => ({ ...item, id: makeId("param") })) ?? [row()];
     headers.value = saved.headers?.map((item) => ({ ...item, id: makeId("header") })) ?? [row()];
+    cookies.value = saved.cookies?.map((item) => ({ ...item, id: makeId("cookie") })) ?? [row()];
     body.value = saved.body ?? "";
-    bodyFields.value = saved.bodyFields?.map((item) => ({ ...item, id: makeId("body") })) ?? [row()];
+    bodyFields.value = normalizeBodyFields(saved.bodyFields);
     bodyType.value = saved.bodyType ?? "none";
     timeoutMs.value = saved.timeoutMs ?? 15000;
     sessionAuth.value = {
       enabled: saved.auth?.enabled ?? false,
+      mode: saved.auth?.mode ?? "bearer",
       responsePath: saved.auth?.responsePath ?? "$.tokenValue",
       headerName: saved.auth?.headerName ?? "Authorization",
       prefix: saved.auth?.prefix ?? "",
-      token: "",
+      token: projects?.value.find((item) => item.id === projectId?.value)?.sessionToken ?? "",
+      username: saved.auth?.username ?? "", password: saved.auth?.password ?? "", apiKeyName: saved.auth?.apiKeyName ?? "X-API-Key",
     };
   }
 
@@ -93,6 +119,7 @@ export function useHttpClient(
       url: url.value,
       query: query.value,
       headers: headers.value,
+      cookies: cookies.value,
       body: body.value,
       bodyFields: bodyFields.value,
       bodyType: bodyType.value,
@@ -102,17 +129,23 @@ export function useHttpClient(
         responsePath: sessionAuth.value.responsePath,
         headerName: sessionAuth.value.headerName,
         prefix: sessionAuth.value.prefix,
+        mode: sessionAuth.value.mode, username: sessionAuth.value.username, password: sessionAuth.value.password, apiKeyName: sessionAuth.value.apiKeyName,
       },
     };
   }
 
   const enabledHeaders = computed(() => headers.value.filter((item) => item.enabled && item.key.trim()));
   const requestHeaders = computed(() => {
-    const sessionHeader = sessionAuth.value.enabled && sessionAuth.value.token
-      ? { key: sessionAuth.value.headerName.trim() || "Authorization", value: sessionAuth.value.prefix + sessionAuth.value.token }
+    const sessionHeader = sessionAuth.value.enabled && sessionAuth.value.mode !== "none" && (sessionAuth.value.mode === "basic" || sessionAuth.value.token)
+      ? sessionAuth.value.mode === "basic"
+        ? { key: "Authorization", value: `Basic ${btoa(`${sessionAuth.value.username}:${sessionAuth.value.password}`)}` }
+        : { key: sessionAuth.value.mode === "api-key" ? (sessionAuth.value.apiKeyName.trim() || "X-API-Key") : (sessionAuth.value.headerName.trim() || "Authorization"), value: sessionAuth.value.mode === "api-key" ? sessionAuth.value.token : sessionAuth.value.prefix + sessionAuth.value.token }
       : null;
+    const cookieHeader = cookies.value.filter((item) => item.enabled && item.key.trim()).map((item) => `${resolve(item.key)}=${resolve(item.value)}`).join("; ");
     const normalHeaders = enabledHeaders.value.filter((item) => !sessionHeader || item.key.toLowerCase() !== sessionHeader.key.toLowerCase());
-    return sessionHeader ? [...normalHeaders, sessionHeader] : normalHeaders;
+    const withoutCookie = normalHeaders.filter((item) => item.key.toLowerCase() !== "cookie");
+    const withSession = sessionHeader ? [...withoutCookie, sessionHeader] : withoutCookie;
+    return cookieHeader ? [...withSession, { key: "Cookie", value: cookieHeader }] : withSession;
   });
   const enabledQuery = computed(() => query.value.filter((item) => item.enabled && item.key.trim()));
   const responseHeaders = computed(() => response.value ? Object.entries(response.value.headers) : []);
@@ -124,6 +157,12 @@ export function useHttpClient(
       try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
     }
     return value;
+  });
+  const responseRawBody = computed(() => response.value?.body ?? "");
+  const responseMatchCount = computed(() => {
+    const needle = responseSearch.value.trim().toLowerCase();
+    if (!needle) return 0;
+    return responseRawBody.value.toLowerCase().split(needle).length - 1;
   });
 
   watch(history, (value) => saveJson(HISTORY_KEY, value), { deep: true });
@@ -138,24 +177,32 @@ export function useHttpClient(
     environment.value = project?.environment?.length
       ? project.environment.map((item) => ({ ...item, id: makeId("env") }))
       : [row("BASE_URL", "https://httpbin.org")];
+    sessionAuth.value.token = project?.sessionToken ?? "";
   }, { immediate: true });
   watch(interfaceId ?? ref(null), restoreInterfaceRequest, { immediate: true });
   watch(
-    [method, url, query, headers, body, bodyFields, bodyType, timeoutMs, sessionAuth],
+    [method, url, query, headers, cookies, body, bodyFields, bodyType, timeoutMs, sessionAuth],
     persistInterfaceRequest,
     { deep: true },
   );
 
   function addQuery() { query.value.push(row()); }
   function addHeader() { headers.value.push(row()); }
-  function addBodyField() { bodyFields.value.push(row()); }
+  function addCookie() { cookies.value.push(row()); }
+  function addBodyField() { bodyFields.value.push(bodyRow()); }
   function removeRow(list: HttpKeyValue[], id: string) {
     const next = list.filter((item) => item.id !== id);
     if (list === query.value) query.value = next.length ? next : [row()];
     else if (list === headers.value) headers.value = next.length ? next : [row()];
-    else if (list === bodyFields.value) bodyFields.value = next.length ? next : [row()];
+    else if (list === cookies.value) cookies.value = next.length ? next : [row()];
+    else if (list === bodyFields.value) bodyFields.value = next.length ? next : [bodyRow()];
     else environment.value = next;
   }
+
+  watch(() => sessionAuth.value.token, (token) => {
+    const project = projects?.value.find((item) => item.id === projectId?.value);
+    if (project) project.sessionToken = token;
+  });
 
   function addEnvironment() { environment.value.push(row()); }
 
@@ -168,8 +215,9 @@ export function useHttpClient(
     url.value = item.url;
     query.value = item.query.map((entry) => ({ ...entry, id: makeId("param") }));
     headers.value = item.headers.map((entry) => ({ ...entry, id: makeId("header") }));
+    cookies.value = item.cookies?.map((entry) => ({ ...entry, id: makeId("cookie") })) ?? [row()];
     body.value = item.body;
-    bodyFields.value = item.bodyFields?.map((entry) => ({ ...entry, id: makeId("body") })) ?? [row()];
+    bodyFields.value = normalizeBodyFields(item.bodyFields);
     bodyType.value = item.bodyType;
     timeoutMs.value = item.timeoutMs;
     response.value = null;
@@ -182,7 +230,9 @@ export function useHttpClient(
     const item: HttpTemplate = {
       id: selectedTemplateId.value ?? makeId("template"), name, createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
       method: method.value, url: url.value, query: query.value, headers: headers.value,
-      body: body.value, bodyType: bodyType.value, timeoutMs: timeoutMs.value,
+      cookies: cookies.value,
+      body: body.value, bodyFields: bodyFields.value, bodyType: bodyType.value, timeoutMs: timeoutMs.value,
+      projectId: projectId?.value ?? undefined,
     };
     templates.value = [item, ...templates.value.filter((entry) => entry.id !== item.id && entry.name !== name)].slice(0, 50);
     selectedTemplateId.value = item.id;
@@ -218,8 +268,9 @@ export function useHttpClient(
     url.value = item.url;
     query.value = item.query.map((entry) => ({ ...entry, id: makeId("param") }));
     headers.value = item.headers.map((entry) => ({ ...entry, id: makeId("header") }));
+    cookies.value = item.cookies?.map((entry) => ({ ...entry, id: makeId("cookie") })) ?? [row()];
     body.value = item.body;
-    bodyFields.value = item.bodyFields?.map((entry) => ({ ...entry, id: makeId("body") })) ?? [row()];
+    bodyFields.value = normalizeBodyFields(item.bodyFields);
     bodyType.value = item.bodyType;
     timeoutMs.value = item.timeoutMs;
     response.value = null;
@@ -230,36 +281,51 @@ export function useHttpClient(
     const item: HttpHistoryItem = {
       id: makeId("http"), createdAt: new Date().toLocaleString("zh-CN", { hour12: false }),
       method: method.value, url: url.value, query: query.value, headers: headers.value,
-      body: body.value, bodyType: bodyType.value, timeoutMs: timeoutMs.value,
+      cookies: cookies.value,
+      body: body.value, bodyFields: bodyFields.value, bodyType: bodyType.value, timeoutMs: timeoutMs.value,
     };
     history.value = [item, ...history.value.filter((entry) => !(entry.method === item.method && entry.url === item.url))].slice(0, 30);
     selectedHistoryId.value = item.id;
   }
 
   async function send() {
-    if (!url.value.trim()) { message.warning("请输入请求 URL"); return; }
+    if (loading.value) { message.info("请求正在执行中"); return; }
+    const resolvedUrl = resolve(url.value.trim());
+    if (!resolvedUrl) { message.warning("请输入请求 URL"); return; }
+    if (!/^https?:\/\/\S+/i.test(resolvedUrl)) { message.warning("请求地址必须以 http:// 或 https:// 开头"); return; }
+    const rowGroups: Array<[string, HttpKeyValue[]]> = [
+      ["Query 参数", query.value], ["Headers", headers.value], ["Cookies", cookies.value],
+      ["Body 参数", bodyFields.value],
+    ];
+    const invalidRows = rowGroups.find(([, rows]) => rows.some((item) => item.enabled && !item.key.trim() && item.value.trim()));
+    if (invalidRows) { message.warning(`${invalidRows[0]}存在未填写名称的值，请补全或删除该行`); return; }
+    if (bodyType.value === "json" && body.value.trim()) {
+      try { JSON.parse(body.value); } catch { message.warning("JSON Body 格式无效，请修正后再发送"); return; }
+    }
+    const sequence = ++requestSequence;
     loading.value = true;
     response.value = null;
     error.value = "";
     try {
-      response.value = await invoke<HttpResponse>("http_request", {
+      const nextResponse = await invoke<HttpResponse>("http_request", {
         request: {
           method: method.value,
-          url: resolve(url.value.trim()),
+          url: resolvedUrl,
           query: enabledQuery.value.map(({ key, value }) => ({ key: resolve(key), value: resolve(value) })),
           headers: requestHeaders.value.map(({ key, value }) => ({ key: resolve(key), value: resolve(value) })),
           body: bodyType.value === "x-www-form-urlencoded"
-            ? new URLSearchParams(bodyFields.value.filter((item) => item.enabled && item.key.trim()).map((item) => [resolve(item.key), resolve(item.value)])).toString()
-            : bodyType.value === "form-data"
-              ? JSON.stringify(bodyFields.value.filter((item) => item.enabled && item.key.trim()).reduce<Record<string, string>>((result, item) => {
-                result[resolve(item.key)] = resolve(item.value);
-                return result;
-              }, {}))
-              : resolve(body.value),
+            ? serializeUrlEncoded(bodyFields.value, resolve)
+            : bodyType.value === "form-data" ? "" : resolve(body.value),
+          bodyFields: bodyType.value === "form-data"
+            ? enabledBodyFields(bodyFields.value, resolve)
+            : [],
           bodyType: bodyType.value,
           timeoutMs: timeoutMs.value,
+          requestId: `http-request-${sequence}`,
         },
       });
+      if (sequence !== requestSequence) return;
+      response.value = nextResponse;
       captureSessionToken(response.value.body);
       saveHistory();
       message.success(`${response.value.status} ${response.value.statusText}`);
@@ -267,6 +333,16 @@ export function useHttpClient(
       error.value = cause instanceof Error ? cause.message : String(cause);
       message.error(`请求失败：${error.value}`);
     } finally { loading.value = false; }
+  }
+
+  function cancel() {
+    if (!loading.value) return;
+    const requestId = `http-request-${requestSequence}`;
+    requestSequence += 1;
+    void invoke("cancel_http_request", { requestId });
+    loading.value = false;
+    error.value = "请求已取消";
+    message.info("请求已取消");
   }
 
   function clearResponse() { response.value = null; error.value = ""; }
@@ -289,9 +365,9 @@ export function useHttpClient(
   }
 
   return {
-    method, url, query, headers, body, bodyFields, bodyType, timeoutMs, loading, response, responseBody,
-    responseHeaders, error, history, selectedHistoryId, sessionAuth,
-    historyOptions: computed(() => history.value.map((item) => ({ label: `${item.method} ${item.url}`, value: item.id }))),
-    curlText, templates, selectedTemplateId, templateName, environment, addQuery, addHeader, addBodyField, addEnvironment, removeRow, applyHistory, applyTemplate, saveTemplate, send, clearResponse, exportCurl, importCurl,
+    method, url, query, headers, cookies, body, bodyFields, bodyType, timeoutMs, loading, response, responseBody,
+    responseHeaders, responseRawBody, responseView, responseSearch, responseMatchCount, error, history, selectedHistoryId, sessionAuth,
+    historyOptions: computed(() => history.value.filter((item) => !projectId?.value || !item.projectId || item.projectId === projectId.value).map((item) => ({ label: `${item.method} ${item.url}`, value: item.id }))),
+    curlText, templates, selectedTemplateId, templateName, environment, addQuery, addHeader, addCookie, addBodyField, addEnvironment, removeRow, applyHistory, applyTemplate, saveTemplate, send, cancel, clearResponse, exportCurl, importCurl,
   };
 }

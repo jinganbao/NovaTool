@@ -5,7 +5,7 @@ import { xml } from "@codemirror/lang-xml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { Decoration, DecorationSet, EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { bracketMatching, foldEffect, foldGutter, foldable, indentOnInput, syntaxHighlighting, defaultHighlightStyle, unfoldAll } from "@codemirror/language";
+import { bracketMatching, foldEffect, foldGutter, foldable, indentOnInput, syntaxHighlighting, defaultHighlightStyle, unfoldAll, unfoldCode } from "@codemirror/language";
 import { highlightActiveLine, highlightActiveLineGutter, lineNumbers } from "@codemirror/view";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { Codemirror } from "vue-codemirror";
@@ -156,6 +156,13 @@ function applySearch(index: number) {
 
   searchIndex.value = (index + matches.length) % matches.length;
   const match = matches[searchIndex.value];
+  // 搜索命中折叠内容时，只展开命中位置的祖先层级，保留其他节点的折叠状态。
+  const previousSelection = view.state.selection;
+  view.dispatch({ selection: { anchor: match.from } });
+  for (let depth = 0; depth < 32 && unfoldCode(view); depth += 1) {
+    // 一个位置可能嵌套在多层折叠范围内，逐层展开直到命中内容可见。
+  }
+  view.dispatch({ selection: previousSelection });
   view.dispatch({
     effects: [
       setSearch.of({ query: props.searchQuery, selected: searchIndex.value }),

@@ -23,15 +23,10 @@ body {
 }
 
 /* ---------- 品牌渐变（由 accent 派生） ---------- */
-.brand-gradient-text {
-  background: linear-gradient(120deg, var(--brand, #3dd6c6), var(--brand-hover, #7de5d9));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
+.brand-gradient-text { color: var(--brand, #3dd6c6); }
 
 .brand-gradient-btn {
-  background: linear-gradient(135deg, var(--brand, #3dd6c6), var(--brand-active, #2ba99c));
+  background: var(--brand, #3dd6c6);
   color: #fff;
 }
 

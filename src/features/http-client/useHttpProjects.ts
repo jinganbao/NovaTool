@@ -12,6 +12,7 @@ export interface HttpProject {
   environments: HttpEnvironment[];
   activeEnvironmentId: string;
   interfaceFolders: string[];
+  sessionToken?: string;
 }
 
 export interface HttpEnvironment {
@@ -29,7 +30,7 @@ export interface HttpInterface {
   createdAt: string;
   folder?: string;
   request?: Partial<HttpRequestConfig> & {
-    auth?: { enabled: boolean; responsePath: string; headerName: string; prefix: string };
+    auth?: { enabled: boolean; responsePath: string; headerName: string; prefix: string; mode?: "none" | "bearer" | "api-key" | "basic"; username?: string; password?: string; apiKeyName?: string };
   };
 }
 
@@ -44,6 +45,7 @@ const state = ref<HttpProject[]>(loadVersionedJson(STORAGE_KEY, [], 1, (value) =
 }));
 
 for (const project of state.value) {
+  project.sessionToken = typeof project.sessionToken === "string" ? project.sessionToken : "";
   project.interfaces = Array.isArray(project.interfaces) ? project.interfaces : [];
   project.environment = Array.isArray(project.environment) ? project.environment : [];
   project.environments = Array.isArray(project.environments) && project.environments.length
@@ -81,6 +83,7 @@ export function useHttpProjects() {
       environments: [{ id: makeId("http-env"), name: "默认环境", baseUrl: "", variables: [] }],
       activeEnvironmentId: "",
       interfaceFolders: ["默认模块"],
+      sessionToken: "",
     };
     project.activeEnvironmentId = project.environments[0].id;
     state.value.unshift(project);
@@ -109,5 +112,13 @@ export function useHttpProjects() {
     persist();
   }
 
-  return { projects: state, createProject, deleteProject, createInterface, deleteInterface };
+  function importProject(project: HttpProject) {
+    if (!project?.id || !project.name) return null;
+    const normalized = { ...project, id: makeId("http-project"), interfaces: Array.isArray(project.interfaces) ? project.interfaces : [], interfaceFolders: Array.isArray(project.interfaceFolders) && project.interfaceFolders.length ? project.interfaceFolders : ["默认模块"] };
+    state.value.unshift(normalized);
+    persist();
+    return normalized;
+  }
+
+  return { projects: state, createProject, deleteProject, createInterface, deleteInterface, importProject };
 }

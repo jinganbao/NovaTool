@@ -11,12 +11,14 @@ import { makeId } from "@/utils/storage";
 import type { HttpKeyValue, HttpRequestConfig } from "@/features/http-client/types";
 import { renderIcon } from "@/utils/render";
 import { useMessage } from "naive-ui";
+import { exportOpenApi, importCollection } from "@/features/http-client/projectExchange";
 
 const message = useMessage();
 const { copyText } = useClipboard(message);
-const { projects, createProject, deleteProject, createInterface, deleteInterface } = useHttpProjects();
+const { projects, createProject, deleteProject, createInterface, deleteInterface, importProject } = useHttpProjects();
 const showHome = ref(true);
 const showCreateProject = ref(false);
+const projectFileInput = ref<HTMLInputElement | null>(null);
 const projectName = ref("");
 const projectDescription = ref("");
 const activeProjectId = ref<string | null>(null);
@@ -34,12 +36,15 @@ const expandedFolders = ref<Record<string, boolean>>({ "默认模块": true });
 const showDeleteConfirm = ref(false);
 const pendingDeleteInterfaceId = ref("");
 const pendingDeleteInterfaceName = ref("");
+const showDeleteProjectConfirm = ref(false);
+const pendingDeleteProjectId = ref("");
+const pendingDeleteProjectName = ref("");
 const requestTab = ref<"params" | "body" | "headers" | "cookies" | "auth">("params");
 const {
-  method, url, query, headers, body, bodyFields, bodyType, timeoutMs, loading, response, responseBody,
-  responseHeaders, error, templates, selectedTemplateId, templateName, environment,
+  method, url, query, headers, cookies, body, bodyFields, bodyType, timeoutMs, loading, response, responseBody,
+  responseHeaders, responseRawBody, responseView, responseSearch, responseMatchCount, error, templates, selectedTemplateId, templateName, environment,
   sessionAuth,
-  addQuery, addHeader, addBodyField, addEnvironment, removeRow, applyTemplate, saveTemplate, send, clearResponse,
+  addQuery, addHeader, addCookie, addBodyField, addEnvironment, removeRow, applyTemplate, saveTemplate, send, cancel, clearResponse,
 } = useHttpClient(activeProjectId, projects, activeInterfaceId);
 
 const methodOptions = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map((value) => ({ label: value, value }));
@@ -60,8 +65,40 @@ const bodyOptions: Array<{ label: string; value: HttpRequestConfig["bodyType"] }
   { label: "x-www-form-urlencoded", value: "x-www-form-urlencoded" }, { label: "JSON", value: "json" },
   { label: "XML", value: "xml" }, { label: "Text", value: "text" },
 ];
-const bodyFieldTypeOptions = ["string", "number", "boolean", "object"].map((value) => ({ label: value, value }));
+const bodyFieldTypeOptions = ["string", "number", "boolean", "object", "file"].map((value) => ({ label: value, value }));
+const authModeOptions = [{ label: "关闭", value: "none" }, { label: "Bearer Token", value: "bearer" }, { label: "API Key", value: "api-key" }, { label: "Basic Auth", value: "basic" }];
 const rowColumns = (list: HttpKeyValue[]) => list;
+const showBulkEdit = ref(false);
+const bulkEditTarget = ref<"query" | "headers" | "cookies" | "body">("headers");
+const bulkEditText = ref("");
+const bulkEditTitle = computed(() => ({ query: "Query 参数", headers: "Headers", cookies: "Cookies", body: "Body 参数" })[bulkEditTarget.value]);
+function openBulkEdit(target: typeof bulkEditTarget.value) {
+  bulkEditTarget.value = target;
+  const source = target === "query" ? query.value : target === "headers" ? headers.value : target === "cookies" ? cookies.value : bodyFields.value;
+  bulkEditText.value = source.filter((item) => item.key.trim()).map((item) => `${item.key}: ${item.value}`).join("\n");
+  showBulkEdit.value = true;
+}
+function applyBulkEdit() {
+  const target = bulkEditTarget.value;
+  const invalidLines: string[] = [];
+  const parsedRows: Array<HttpKeyValue | null> = bulkEditText.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line): HttpKeyValue | null => {
+    const separator = line.indexOf(":");
+    if (separator < 1) { invalidLines.push(line); return null; }
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    return target === "body"
+      ? { id: makeId("body"), key, value, enabled: true, type: "string" as const, description: "" }
+      : { id: makeId(target), key, value, enabled: true };
+  });
+  const rows = parsedRows.filter((item): item is HttpKeyValue => item !== null);
+  if (target === "query") query.value = rows.length ? rows : [{ id: makeId("param"), key: "", value: "", enabled: true }];
+  else if (target === "headers") headers.value = rows.length ? rows : [{ id: makeId("header"), key: "", value: "", enabled: true }];
+  else if (target === "cookies") cookies.value = rows.length ? rows : [{ id: makeId("cookie"), key: "", value: "", enabled: true }];
+  else bodyFields.value = rows.length ? rows : [{ id: makeId("body"), key: "", value: "", enabled: true, type: "string", description: "" }];
+  showBulkEdit.value = false;
+  if (invalidLines.length) message.warning(`已忽略 ${invalidLines.length} 行无效内容，请使用“名称: 值”格式`);
+  else message.success(`${bulkEditTitle.value}已更新`);
+}
 const showEnvironmentManager = ref(false);
 const selectedEnvironmentId = ref("");
 const environmentName = ref("");
@@ -73,6 +110,13 @@ const hasSensitiveData = computed(() =>
 );
 function isSensitiveKey(key: string) {
   return sensitiveKeyPattern.test(key);
+}
+function handleBodyFile(item: HttpKeyValue, event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { item.fileData = String(reader.result); item.fileName = file.name; item.value = file.name; };
+  reader.readAsDataURL(file);
 }
 function openProject(id: string) {
   activeProjectId.value = id;
@@ -274,11 +318,64 @@ function submitProject() {
   message.success("项目已创建");
 }
 function removeProject(id: string) {
+  const project = projects.value.find((item) => item.id === id);
+  if (!project) return;
+  pendingDeleteProjectId.value = id;
+  pendingDeleteProjectName.value = project.name;
+  showDeleteProjectConfirm.value = true;
+}
+function confirmRemoveProject() {
+  const id = pendingDeleteProjectId.value;
+  if (!id) return;
   deleteProject(id);
   if (activeProjectId.value === id) {
     activeProjectId.value = null;
     showHome.value = true;
   }
+  showDeleteProjectConfirm.value = false;
+  pendingDeleteProjectId.value = "";
+  pendingDeleteProjectName.value = "";
+  message.success("项目已删除");
+}
+function exportProjects() {
+  const source = activeProject.value ? [activeProject.value] : projects.value;
+  const exported = JSON.parse(JSON.stringify(source));
+  exported.forEach((project: { sessionToken?: string; environment?: HttpKeyValue[]; environments?: Array<{ variables: HttpKeyValue[] }> }) => {
+    project.sessionToken = "";
+    project.environment?.forEach((item) => { if (isSensitiveKey(item.key)) item.value = ""; });
+    project.environments?.forEach((environment) => environment.variables?.forEach((item) => { if (isSensitiveKey(item.key)) item.value = ""; }));
+  });
+  const blob = new Blob([JSON.stringify(exported, null, 2)], { type: "application/json" });
+  const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "novatool-http-project.json"; link.click(); URL.revokeObjectURL(link.href);
+}
+function exportOpenApiProject() {
+  if (!activeProject.value) { message.warning("请先进入项目"); return; }
+  const blob = new Blob([JSON.stringify(exportOpenApi(activeProject.value), null, 2)], { type: "application/json" });
+  const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${activeProject.value.name}-openapi.json`; link.click(); URL.revokeObjectURL(link.href);
+}
+async function importProjects(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  try { const value = JSON.parse(await file.text()); const converted = importCollection(value); const list = converted ? [converted] : (Array.isArray(value) ? value : [value]); list.forEach((item) => importProject(item)); message.success(converted ? "接口集合已导入" : "项目已导入"); } catch { message.error("项目文件格式无效"); }
+  (event.target as HTMLInputElement).value = "";
+}
+function handleFolderContext(name: string, event: MouseEvent) {
+  event.preventDefault();
+  const project = activeProject.value;
+  if (!project || name === "默认模块") return;
+  const action = window.prompt(`输入“${name}”的新名称；输入 DELETE 删除目录`, name);
+  if (action === null) return;
+  if (action.trim().toUpperCase() === "DELETE") {
+    project.interfaceFolders = project.interfaceFolders.filter((folder) => folder !== name);
+    project.interfaces.forEach((item) => { if ((item.folder || "默认模块") === name) item.folder = "默认模块"; });
+    message.success("目录已删除，接口已移入默认模块");
+    return;
+  }
+  const next = action.trim();
+  if (!next || project.interfaceFolders.includes(next)) { message.warning("目录名称无效或已存在"); return; }
+  project.interfaceFolders = project.interfaceFolders.map((folder) => folder === name ? next : folder);
+  project.interfaces.forEach((item) => { if (item.folder === name) item.folder = next; });
+  message.success("目录已重命名");
 }
 </script>
 
@@ -290,7 +387,7 @@ function removeProject(id: string) {
         <h2>接口项目</h2>
         <p>按项目管理请求、环境变量和调试历史。</p>
       </div>
-      <n-button type="primary" :render-icon="() => renderIcon(FolderPlus)" @click="showCreateProject = true">新建项目</n-button>
+      <n-space><n-button secondary @click="exportProjects">导出项目</n-button><n-button secondary @click="exportOpenApiProject">导出 OpenAPI</n-button><n-button secondary @click="projectFileInput?.click()">导入项目</n-button><input ref="projectFileInput" type="file" accept="application/json" hidden @change="importProjects" /><n-button type="primary" :render-icon="() => renderIcon(FolderPlus)" @click="showCreateProject = true">新建项目</n-button></n-space>
     </header>
     <div v-if="projects.length" class="project-grid">
       <article v-for="project in projects" :key="project.id" class="project-card" tabindex="0" @dblclick="openProject(project.id)" @keydown.enter="openProject(project.id)">
@@ -315,12 +412,19 @@ function removeProject(id: string) {
   <n-modal v-model:show="showDeleteConfirm" preset="dialog" type="warning" title="删除接口" positive-text="删除" negative-text="取消" @positive-click="confirmRemoveInterface">
     确定删除“{{ pendingDeleteInterfaceName }}”吗？删除后无法恢复。
   </n-modal>
+  <n-modal v-model:show="showDeleteProjectConfirm" preset="dialog" type="warning" title="删除项目" positive-text="删除" negative-text="取消" @positive-click="confirmRemoveProject">
+    确定删除项目“{{ pendingDeleteProjectName }}”吗？项目中的接口、环境和配置都将被删除，且无法恢复。
+  </n-modal>
   <n-modal v-model:show="showSaveInterface" preset="card" title="保存接口" class="nova-modal" style="width: 420px">
     <div class="project-form">
       <n-input v-model:value="saveInterfaceName" autofocus placeholder="接口名称" @keyup.enter="confirmSaveInterface" />
       <n-select v-model:value="saveInterfaceFolder" :options="interfaceFolderOptions" placeholder="选择保存目录" />
     </div>
     <template #footer><n-space justify="end"><n-button @click="showSaveInterface = false">取消</n-button><n-button type="primary" @click="confirmSaveInterface">保存</n-button></n-space></template>
+  </n-modal>
+  <n-modal v-model:show="showBulkEdit" preset="card" :title="`批量编辑 ${bulkEditTitle}`" class="nova-modal" style="width: 560px">
+    <n-input v-model:value="bulkEditText" type="textarea" :autosize="{ minRows: 8, maxRows: 16 }" placeholder="每行一个参数，格式：名称: 值" />
+    <template #footer><n-space justify="end"><n-button @click="showBulkEdit = false">取消</n-button><n-button type="primary" @click="applyBulkEdit">应用</n-button></n-space></template>
   </n-modal>
 
   <n-modal v-model:show="showCreateFolder" preset="card" title="新建接口目录" class="nova-modal" style="width: 360px">
@@ -343,7 +447,7 @@ function removeProject(id: string) {
         </n-input>
         <div v-if="interfaceGroups.length" class="interface-tree">
           <section v-for="group in interfaceGroups" :key="group.name" class="interface-folder">
-            <button type="button" class="interface-folder-row" @click="toggleFolder(group.name)">
+            <button type="button" class="interface-folder-row" data-custom-context-menu @click="toggleFolder(group.name)" @contextmenu="handleFolderContext(group.name, $event)">
               <ChevronDown v-if="isFolderExpanded(group.name)" :size="13" />
               <ChevronRight v-else :size="13" />
               <Folder :size="14" />
@@ -423,7 +527,8 @@ function removeProject(id: string) {
         <n-input :value="requestBaseUrl || '未配置环境 URL'" size="small" readonly class="request-base-url" />
         <n-input v-model:value="requestPath" size="small" placeholder="/接口路径" class="url-input request-path" :disabled="!requestBaseUrl" @keyup.enter="send" />
       </div>
-      <n-button size="small" type="primary" :loading="loading" :render-icon="() => renderIcon(Send)" @click="send">发送</n-button>
+      <n-button v-if="!loading" size="small" type="primary" :render-icon="() => renderIcon(Send)" @click="send">发送</n-button>
+      <n-button v-else size="small" type="warning" @click="cancel">取消</n-button>
       <n-button size="small" secondary @click="saveCurrentInterface">保存</n-button>
     </div>
 
@@ -464,7 +569,7 @@ function removeProject(id: string) {
           <span class="tab-spacer"></span><span>设置</span>
         </div>
         <div v-if="requestTab === 'params'" class="config-section">
-          <div class="section-head"><strong>Query 参数</strong><n-button size="tiny" quaternary :render-icon="() => renderIcon(Plus)" aria-label="添加 Query 参数" title="添加 Query 参数" @click="addQuery" /></div>
+          <div class="section-head"><strong>Query 参数</strong><span class="section-actions"><n-button size="tiny" quaternary @click="openBulkEdit('query')">批量编辑</n-button><n-button size="tiny" quaternary :render-icon="() => renderIcon(Plus)" aria-label="添加 Query 参数" title="添加 Query 参数" @click="addQuery" /></span></div>
           <div v-for="item in rowColumns(query)" :key="item.id" class="key-value-row">
             <input v-model="item.enabled" type="checkbox" aria-label="启用参数" />
             <n-input v-model:value="item.key" size="small" placeholder="参数名" />
@@ -473,7 +578,7 @@ function removeProject(id: string) {
           </div>
         </div>
         <div v-if="requestTab === 'headers'" class="config-section">
-          <div class="section-head"><strong>Headers</strong><n-button size="tiny" quaternary :render-icon="() => renderIcon(Plus)" aria-label="添加 Header" title="添加 Header" @click="addHeader" /></div>
+          <div class="section-head"><strong>Headers</strong><span class="section-actions"><n-button size="tiny" quaternary @click="openBulkEdit('headers')">批量编辑</n-button><n-button size="tiny" quaternary :render-icon="() => renderIcon(Plus)" aria-label="添加 Header" title="添加 Header" @click="addHeader" /></span></div>
           <div v-for="item in rowColumns(headers)" :key="item.id" class="key-value-row">
             <input v-model="item.enabled" type="checkbox" aria-label="启用 Header" />
             <n-input v-model:value="item.key" size="small" placeholder="Header 名称" />
@@ -487,13 +592,14 @@ function removeProject(id: string) {
             <button v-for="option in bodyOptions" :key="option.value" type="button" role="tab" :aria-selected="bodyType === option.value" :class="{ active: bodyType === option.value }" @click="bodyType = option.value">{{ option.label }}</button>
           </div>
           <div v-if="bodyType === 'form-data' || bodyType === 'x-www-form-urlencoded'" class="body-fields">
-            <div class="body-fields-head"><span></span><span>参数名</span><span>参数值</span><span>类型</span><span>说明</span><span></span></div>
+            <div class="body-fields-head"><span></span><span>参数名</span><span>参数值</span><span>类型</span><span>说明</span><span><n-button size="tiny" quaternary @click="openBulkEdit('body')">批量编辑</n-button></span></div>
             <div v-for="item in bodyFields" :key="item.id" class="body-field-row">
               <input v-model="item.enabled" type="checkbox" aria-label="启用 Body 参数" />
               <n-input v-model:value="item.key" size="small" placeholder="参数名" />
-              <n-input v-model:value="item.value" size="small" placeholder="参数值" />
-              <n-select value="string" size="small" :options="bodyFieldTypeOptions" />
-              <n-input size="small" placeholder="说明" />
+              <n-input v-if="item.type !== 'file'" v-model:value="item.value" size="small" placeholder="参数值" />
+              <label v-else class="body-file-input"><input type="file" @change="handleBodyFile(item, $event)" /><span>{{ item.fileName || "选择文件" }}</span></label>
+      <n-select v-model:value="item.type" size="small" :options="bodyFieldTypeOptions" />
+      <n-input v-model:value="item.description" size="small" placeholder="说明" />
               <n-button size="tiny" quaternary aria-label="删除 Body 参数" title="删除 Body 参数" :render-icon="() => renderIcon(Trash2)" @click="removeRow(bodyFields, item.id)" />
             </div>
             <button type="button" class="body-add-row" @click="addBodyField">添加参数</button>
@@ -503,28 +609,35 @@ function removeProject(id: string) {
         </div>
         <div v-if="requestTab === 'auth'" class="auth-tab-panel">
           <div class="section-head"><strong>会话认证</strong><span class="environment-hint">从登录响应提取 Token，并自动注入后续请求</span><n-switch v-model:value="sessionAuth.enabled" size="small" /></div>
+          <n-select v-model:value="sessionAuth.mode" size="small" :options="authModeOptions" />
           <div class="auth-tab-fields">
             <n-input v-model:value="sessionAuth.responsePath" size="small" placeholder="响应路径，例如 $.tokenValue" />
             <n-input v-model:value="sessionAuth.headerName" size="small" placeholder="请求头名称，例如 Authorization" />
             <n-input v-model:value="sessionAuth.prefix" size="small" placeholder="前缀，例如 Bearer " />
             <n-input :value="sessionAuth.token" size="small" type="password" show-password-on="click" readonly :placeholder="sessionAuth.enabled ? '等待登录响应提取 Token' : '会话认证未启用'" />
           </div>
+          <div v-if="sessionAuth.mode === 'basic'" class="auth-tab-fields"><n-input v-model:value="sessionAuth.username" size="small" placeholder="用户名" /><n-input v-model:value="sessionAuth.password" size="small" type="password" placeholder="密码" /></div>
+          <n-input v-if="sessionAuth.mode === 'api-key'" v-model:value="sessionAuth.apiKeyName" size="small" placeholder="API Key Header 名称" />
           <div class="auth-tab-footer">
             <span>{{ sessionAuth.token ? '当前会话已获取 Token' : '发送登录请求后可自动提取 Token' }}</span>
             <n-button v-if="sessionAuth.token" size="tiny" quaternary aria-label="清空 Token" title="清空 Token" :render-icon="() => renderIcon(Trash2)" @click="sessionAuth.token = ''" />
           </div>
         </div>
-        <div v-if="requestTab === 'cookies'" class="empty-tab-panel"><strong>Cookies</strong><span>当前可在 Headers 中添加 Cookie 请求头。</span></div>
+        <div v-if="requestTab === 'cookies'" class="config-section">
+          <div class="section-head"><strong>Cookies</strong><span class="section-actions"><n-button size="tiny" quaternary @click="openBulkEdit('cookies')">批量编辑</n-button><n-button size="tiny" quaternary :render-icon="() => renderIcon(Plus)" aria-label="添加 Cookie" title="添加 Cookie" @click="addCookie" /></span></div>
+          <div v-for="item in cookies" :key="item.id" class="key-value-row"><input v-model="item.enabled" type="checkbox" aria-label="启用 Cookie" /><n-input v-model:value="item.key" size="small" placeholder="Cookie 名称" /><n-input v-model:value="item.value" size="small" placeholder="Cookie 值" /><n-button size="tiny" quaternary aria-label="删除 Cookie" title="删除 Cookie" :render-icon="() => renderIcon(Trash2)" @click="removeRow(cookies, item.id)" /></div>
+        </div>
         <div v-if="requestTab === 'params'" class="request-options"><span>超时</span><n-input-number v-model:value="timeoutMs" size="small" :min="100" :max="120000" :step="1000" :show-button="false" class="timeout-input" /><span>ms</span></div>
       </section>
 
       <section class="response-panel">
-        <header class="response-head"><div><h2>响应</h2><span v-if="response">{{ response.size }} bytes · {{ response.durationMs }} ms</span></div><n-space :size="5"><n-tag v-if="response" :type="response.status >= 400 ? 'error' : 'success'" :bordered="false" size="small">{{ response.status }} {{ response.statusText }}</n-tag><n-button size="tiny" secondary :disabled="!response" :render-icon="() => renderIcon(Copy)" @click="copyText(responseBody)">复制</n-button><n-button size="tiny" secondary :disabled="!response" @click="clearResponse">清空</n-button></n-space></header>
+        <header class="response-head"><div><h2>响应</h2><span v-if="response">{{ response.size }} bytes · {{ response.durationMs }} ms</span></div><n-space :size="5"><n-tag v-if="response" :type="response.status >= 400 ? 'error' : 'success'" :bordered="false" size="small">{{ response.status }} {{ response.statusText }}</n-tag><n-button size="tiny" secondary :disabled="!response" :render-icon="() => renderIcon(Copy)" @click="copyText(responseView === 'pretty' ? responseBody : responseRawBody)">复制</n-button><n-button size="tiny" secondary :disabled="!response" @click="clearResponse">清空</n-button></n-space></header>
         <div v-if="error" class="response-error"><ToolState type="error" title="请求失败" :detail="error" compact /></div>
         <template v-else-if="response">
           <div class="response-meta"><span>Headers {{ responseHeaders.length }}</span><span>{{ response.truncated ? "响应已截断" : "完整响应" }}</span></div>
           <div class="response-headers"><div v-for="([key, value]) in responseHeaders" :key="key"><code>{{ key }}</code><span>{{ value }}</span></div></div>
-          <CodeEditor :model-value="responseBody" language="json" readonly placeholder="空响应" />
+          <div class="response-tools"><div class="response-view-tabs"><button type="button" :class="{ active: responseView === 'pretty' }" @click="responseView = 'pretty'">Pretty</button><button type="button" :class="{ active: responseView === 'raw' }" @click="responseView = 'raw'">Raw</button></div><n-input v-model:value="responseSearch" size="small" clearable placeholder="搜索响应" /><span v-if="responseSearch">{{ responseMatchCount }} 处匹配</span></div>
+          <CodeEditor :model-value="responseView === 'pretty' ? responseBody : responseRawBody" language="json" readonly placeholder="空响应" />
         </template>
         <ToolState v-else title="暂无响应" detail="配置请求后点击发送" />
       </section>

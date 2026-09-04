@@ -105,5 +105,12 @@ export function getThemeVars(config: AppConfig, resolvedMode: "dark" | "light") 
     "--shadow-strong": dark ? "rgba(0, 0, 0, 0.6)" : "rgba(15, 23, 42, 0.16)",
     "--swatch-ring": dark ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.12)",
     "--brand-gradient": `linear-gradient(135deg, ${accent}, ${mix(accent, "#000000", 0.25)})`,
+    "--method-get": dark ? "#20c997" : "#087f5b",
+    "--method-post": dark ? "#f59e0b" : "#b45309",
+    "--method-put": dark ? "#60a5fa" : "#2563eb",
+    "--method-patch": dark ? "#a78bfa" : "#7c3aed",
+    "--method-delete": dark ? "#f87171" : "#dc2626",
+    "--method-head": dark ? "#94a3b8" : "#64748b",
+    "--method-options": dark ? "#22d3ee" : "#0891b2",
   };
 }

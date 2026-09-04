@@ -5,6 +5,10 @@ export interface HttpKeyValue {
   key: string;
   value: string;
   enabled: boolean;
+  type?: "string" | "number" | "boolean" | "object" | "file";
+  description?: string;
+  fileData?: string;
+  fileName?: string;
 }
 
 export interface HttpRequestConfig {
@@ -12,6 +16,7 @@ export interface HttpRequestConfig {
   url: string;
   query: HttpKeyValue[];
   headers: HttpKeyValue[];
+  cookies?: HttpKeyValue[];
   body: string;
   bodyType: "none" | "form-data" | "x-www-form-urlencoded" | "json" | "xml" | "text" | "binary" | "graphql" | "msgpack";
   bodyFields?: HttpKeyValue[];
@@ -31,6 +36,7 @@ export interface HttpResponse {
 export interface HttpHistoryItem extends HttpRequestConfig {
   id: string;
   createdAt: string;
+  projectId?: string;
 }
 
 export interface HttpTemplate extends HttpHistoryItem {

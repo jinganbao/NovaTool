@@ -184,6 +184,10 @@ h1 {
 }
 
 @media (max-width: 700px) {
+  .top-bar.mac {
+    padding-left: 52px;
+  }
+
   .tool-desc {
     display: none;
   }

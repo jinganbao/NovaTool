@@ -8,6 +8,15 @@ mod udp_client;
 mod text_diff;
 mod utils;
 
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::{oneshot, Mutex};
+
+#[derive(Default)]
+pub struct HttpRequestState {
+    pub cancellations: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+}
+
 #[cfg(target_os = "macos")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -38,6 +47,7 @@ pub fn run() {
         )
         .manage(tcp_server::ServerState::default())
         .manage(tcp_client::TcpPool::default())
+        .manage(HttpRequestState::default())
         .invoke_handler(tauri::generate_handler![
             app_ready,
             tcp_client::tcp_send,
@@ -57,6 +67,7 @@ pub fn run() {
             port_check::kill_process,
             menu::open_url
             , http_client::http_request
+            , http_client::cancel_http_request
         ])
         .setup(|app| {
             // 系统菜单栏（全中文）

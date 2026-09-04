@@ -224,4 +224,10 @@ function selectTool(key: ToolKey) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+@media (max-width: 700px) {
+  .icon-bar {
+    width: 52px;
+  }
+}
 </style>
